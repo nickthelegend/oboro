@@ -22,7 +22,8 @@ const INVOICE_PERMIT = Symbol('guardrails_checked');
 const indiaDay = (date: Date) => { const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date); const part = (type: string) => parts.find(p => p.type === type)?.value ?? ''; return `${part('year')}-${part('month')}-${part('day')}`; };
 export function backoffMs(attempt: number, random = Math.random()): number { return Math.min(30_000, 500 * 2 ** attempt) + Math.floor(random * 500); }
 export function parseSearch(raw: unknown): SearchResult[] {
-  const data = obj(raw); const entries = Array.isArray(data.products) ? data.products : Array.isArray(data.data) ? data.data : [];
+  // REST v2 search returns `data` as a bare array; the CLI wraps results in { products } or { data }.
+  const data = obj(raw); const entries = Array.isArray(raw) ? raw : Array.isArray(data.products) ? data.products : Array.isArray(data.data) ? data.data : [];
   return entries.map((entry: unknown) => { const x = obj(entry); return { id: idOf(x), name: str(x.name), in_stock: x.in_stock !== false, currency: str(x.currency) }; }).filter(x => x.id);
 }
 export function parseProduct(raw: unknown): Product {

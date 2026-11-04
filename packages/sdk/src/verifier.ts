@@ -30,7 +30,10 @@ export class ZingoViewVerifier {
   async find(txid: string, nonce: string, minZats: number): Promise<Verification> {
     if (!TXID.test(txid)) throw new OboroError('invalid_txid', 'Invalid txid');
     if (this.session) {
-      const height = await this.session.ensureSynced(20_000);
+      // Don't block the paid request on a full sync: the session's background loop keeps scanning. Read what the wallet
+      // has now; confirmations come from the wallet's current height, so an unseen or unmined note stays pending.
+      void this.session.ensureSynced(20_000).catch(() => undefined);
+      const height = (JSON.parse(await this.session.exec('height', [], 30_000)) as { height: number }).height;
       return this.readTransfer(txid, nonce, height);
     }
     // A prior online scan may have saved a confirmed note before its CLI session timed out.

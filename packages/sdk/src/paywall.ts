@@ -4,7 +4,10 @@ import { atomicJson, readJson } from './storage.js';
 import type { Verification } from './verifier.js';
 
 export interface LedgerEntry { ts: string; path: string; priceZats: number; txid?: string; height?: number; status: string; viaMixnet: boolean; sellerSaw: { ip: '127.0.0.1' | 'direct'; payerAddress: null } }
-interface NonceState { path: string; priceZats: number; expiresAt: string; redeemedTxid?: string }
+interface NonceState { path: string; priceZats: number; expiresAt: string; redeemedTxid?: string; claimedTxid?: string; claimedAt?: string }
+// A challenge's expiresAt is the deadline to *submit* a payment. The first X-PAYMENT before it claims the nonce for that
+// txid, and the same txid may keep retrying while the note is mined and seen (up to SETTLE_WINDOW_MS after the claim).
+const SETTLE_WINDOW_MS = 2 * 60 * 60_000;
 interface State { nonces: Record<string, NonceState>; txids: Record<string, string>; ledger: LedgerEntry[] }
 export interface PaywallRequest { path: string; priceZats: number; description: string; paymentHeader?: string; viaMixnet: boolean }
 export type PaywallDecision = { authorized: true; headers: Record<string, string> } | { authorized: false; status: 402; body: Challenge | { error: string }; headers: Record<string, string> };
@@ -39,9 +42,12 @@ export function createPaywall(options: { payTo: string; verifier: Verifier; stat
     const check = await transact(s => {
       const n = s.nonces[nonce];
       if (!n || n.path !== path || n.priceZats !== priceZats) return 'nonce_unknown';
-      if (Date.now() > Date.parse(n.expiresAt)) return 'nonce_expired';
       if (n.redeemedTxid) return 'nonce_reused';
       if (s.txids[txid]) return 'txid_reused';
+      if (n.claimedTxid && n.claimedTxid !== txid) return 'nonce_claimed';
+      if (n.claimedTxid) return Date.now() - Date.parse(n.claimedAt ?? n.expiresAt) > SETTLE_WINDOW_MS ? 'settlement_window_closed' : null;
+      if (Date.now() > Date.parse(n.expiresAt)) return 'nonce_expired';
+      n.claimedTxid = txid; n.claimedAt = new Date().toISOString();
       return null;
     });
     if (check) return denied(check);
