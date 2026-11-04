@@ -10,7 +10,9 @@ await seller.exportViewingKeyToFile(keyFile);
 const mode = (await stat(keyFile)).mode & 0o777;
 if (mode !== 0o600) throw new Error('View key file must have mode 600');
 const key = (await readFile(keyFile, 'utf8')).trim();
-const birthday = Number((await runZingo(seller.dataDir, 'birthday')).trim());
+// A view wallet only has to see payments made from now on. OBORO_SELLER_VIEW_BIRTHDAY (a recent height) skips
+// scanning the seller wallet's whole history, which takes many minutes on a first sync.
+const birthday = Number(process.env.OBORO_SELLER_VIEW_BIRTHDAY ?? (await runZingo(seller.dataDir, 'birthday')).trim());
 if (!Number.isSafeInteger(birthday) || birthday < 0) throw new Error('Invalid seller wallet birthday');
 const existing = await stat(`${viewDir}/zingo-wallet.dat`).then(() => true, () => false);
 await runZingo(viewDir, 'height', [], false, existing ? undefined : key, existing ? undefined : birthday);
