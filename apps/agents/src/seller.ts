@@ -23,7 +23,7 @@ app.get('/v1/intel/fees', paywall.price(3_000, 'ZIP 317 computed fee table'), (_
 app.get('/oboro/ledger', async (_req, res, next) => {
   try {
     const ledger = await paywall.ledger();
-    res.json({ agent: 'Tsuki', ledger, sellerSaw: { mixnetPeer: '127.0.0.1', payerAddress: null, explanation: 'The gate forwards a local HTTP request; shielded payments do not reveal a payer address to this service.' } });
+    res.json({ agent: 'Tsuki', payTo, ledger, sellerSaw: { mixnetPeer: '127.0.0.1', payerAddress: null, explanation: 'The gate forwards a local HTTP request; shielded payments do not reveal a payer address to this service.' } });
   } catch (error) { next(error); }
 });
 app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error.message); res.status(500).json({ error: 'internal_error' }); });
