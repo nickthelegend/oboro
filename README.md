@@ -139,7 +139,10 @@ switch (`OBORO_CHAIN=mainnet`; testnet stays the default and mainnet is refused 
   block 3,541,772). Tsuki parks it; after the operator approves, Bitrefill delivers invoice
   **`6ec705e7-5ab5-4c42-8f13-ac7483fa1b39`** (order `6aeb5d5f5376aed24165d2d6`).
 
+A second recorded x402 call, after a UI label fix: [`a43d037e…7aab`](https://blockchair.com/zcash/transaction/a43d037e644f5820b193968a1d8a1124f0aac43214e324cbd0da15cbf6d77aab), block 3,541,778.
+
 On the explorer each shows only the 0.0001 ZEC fee leaving the shielded pool: no sender, receiver or amount.
+Mainnet film (1:24, all live, sped-up stretches badged): https://drive.google.com/file/d/1iWeAIstYepoMEPvI_iJkwUJGsk4Rrld7/view
 To run it: put the mainnet wallet dirs and state paths in an env file outside the repo and start with
 `OBORO_ENV_OVERLAY=<that file> scripts/up.sh` (see `MAINNET_MODE_RESULT.md` for the variables).
 
