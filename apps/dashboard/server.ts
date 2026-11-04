@@ -32,7 +32,8 @@ const SPEND_FILE = resolve(repo, process.env.OBORO_SPEND_FILE ?? '.oboro/agent-s
 const CHAIN = process.env.OBORO_CHAIN ?? 'testnet';
 if (CHAIN !== 'testnet' && CHAIN !== 'mainnet') throw new Error('OBORO_CHAIN must be testnet or mainnet');
 const NETWORK = CHAIN === 'mainnet' ? 'zcash-mainnet' : 'zcash-testnet';
-const EXPLORER = `https://${CHAIN}.zcashexplorer.app/transactions/`;
+// mainnet.zcashexplorer.app did not index our v6 mainnet transactions (4 Nov 2026); Blockchair does.
+const EXPLORER = CHAIN === 'mainnet' ? 'https://blockchair.com/zcash/transaction/' : 'https://testnet.zcashexplorer.app/transactions/';
 
 const CATALOG = [
   { endpoint: 'tip', path: '/v1/intel/tip', priceZats: 2_000, description: 'Latest Zcash testnet height, read by Tsuki' },

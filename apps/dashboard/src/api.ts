@@ -114,7 +114,8 @@ export const zec = (zats?: number) =>
 let mainnet = false;
 export function setNetwork(n?: string) { if (n) mainnet = n === 'zcash-mainnet'; }
 export const chainName = () => (mainnet ? 'mainnet' : 'testnet');
-export const explorer = (txid: string) => `https://${mainnet ? 'mainnet' : 'testnet'}.zcashexplorer.app/transactions/${txid}`;
+// mainnet.zcashexplorer.app did not index our v6 mainnet transactions; Blockchair does.
+export const explorer = (txid: string) => (mainnet ? `https://blockchair.com/zcash/transaction/${txid}` : `https://testnet.zcashexplorer.app/transactions/${txid}`);
 
 // ───────── Shop (Bitrefill through Tsuki) ─────────
 export type ShopStep = { ts: string; type: string; detail?: string; txid?: string; zats?: number; usd?: number; mixMs?: number; status?: number };
