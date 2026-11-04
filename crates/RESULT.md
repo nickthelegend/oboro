@@ -85,3 +85,13 @@ run 1: GET /free 200 7640 ms · GET /paid 402 3950 ms · POST /echo 200 5538 ms 
 run 2: GET /free 200 5745 ms · GET /paid 402 3943 ms · POST /echo 200 5396 ms
 run 3: GET /free 200 5074 ms · GET /paid 402 3492 ms · POST /echo 200 7230 ms
 ```
+
+## 2026-11-04: MCP shop tools and nym-sdk 1.22.3
+
+**Part 1 files:** `../packages/mcp/src/server.ts`, `../packages/mcp/test/server.test.ts`, and `../packages/mcp/README.md`. The server now registers seven tools: the existing fetch, budget, and status tools plus shop search, product, buy, and receipt. The buy call uses the existing `createAgent().fetch` spend policy, polls a `processing` receipt for up to five minutes, and masks all redemption field values before returning them to MCP clients. The receipt tool applies the same mask. The registration test checks all seven schemas; a pure test checks the masking rule. `pnpm -r test` passed: 67 tests passed across the workspace, 5 skipped; `pnpm -r typecheck` and `pnpm -r build` passed. No paid shop purchase was attempted in these checks.
+
+**Part 2 files:** `oboro-node/Cargo.toml`, `Cargo.lock`, and `oboro-node/RESULT.md`. Direct Nym dependency: `nym-sdk 1.22.3` from Git tag `nym-binaries-v2026.21-hanoi` (`f92749c5`), replacing `1.21.4`; the Nym transitive crates are aligned at 1.22.3. The upstream lockfile was used to resolve the yanked `tokio_with_wasm 0.10.1`. The stream source findings are detailed in `oboro-node/RESULT.md`: early data is now buffered within limits before `accept()`, there is `OpenAck`/`wait_established`, and there is still no wire Close/EOF. Oboro's Ready handshake remains. `cargo test` passed 6 unit tests (1 real-mixnet test ignored by default); `cargo build --release` passed with no Rust source changes. A fresh gate/tunnel and throwaway local upstream returned HTTP 200 for three real-Nym requests in **4.607048 s, 2.146880 s, and 3.219396 s**. All three started processes were killed by PID, and `/private/tmp/oboro-122/` was removed.
+
+**Path constraint:** the requested Cargo home under `/Volumes/Extreme SSD/Projects/grokbot/tools/` was not writable in this sandbox (`Operation not permitted` while creating its Git checkout). The verification used `/private/tmp/oboro-122-cargo` and `/private/tmp/oboro-122-target`, separate from the running stack's target directory. Those temporary build caches are removed after verification.
+
+**Left:** Claude can review and commit these changes. A real paid shop purchase and delivery remain untested here because they would spend the operator's live event credits; the requested MCP checks covered registration, masking, types, and build. No commit was made.

@@ -12,7 +12,7 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
-nym-sdk = "=1.21.4"
+nym-sdk = { git = "https://github.com/nymtech/nym", tag = "nym-binaries-v2026.21-hanoi" }
 percent-encoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -22,6 +22,5 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
-
 
 
