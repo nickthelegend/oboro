@@ -292,7 +292,7 @@ app.get('/api/shop/quote', async (_req, res) => {
 export async function launchShopRun(productIdIn: unknown, valueIn: unknown, by: 'button' | 'agent' = 'button'): Promise<{ run?: ShopRun; status: number; error?: string }> {
   const productId = String(productIdIn ?? 'swiggy-money-india');
   const value = String(valueIn ?? '50');
-  if (!/^[a-z0-9-]{1,100}$/.test(productId) || !/^\d+(\.\d+)?$/.test(value)) return { status: 400, error: 'product_id and value are required' };
+  if (!/^[a-z0-9-]{1,100}$/.test(productId) || !/^(?:\d+(?:\.\d+)?|[\w .+/–-]{1,80})$/.test(value)) return { status: 400, error: 'product_id and a package value are required' };
   if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return { status: 409, error: 'Kumo is already paying for something' };
   const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
   if (!buyerDir) return { status: 412, error: 'Setup required: OBORO_BUYER_WALLET_DIR' };
