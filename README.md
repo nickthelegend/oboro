@@ -61,6 +61,13 @@ Tsuki's gate logged each request as `sender: SURB reply tag only (no IP, no Nym 
 - *"Also buy me a ₹500 Flipkart card."* Refused **before any payment**: $5.61 is over Tsuki's $1 cap, so only a human
   could approve it.
 
+- *"Buy me ₹250 of Swiggy credit for groceries."* ($2.75, over the cap.) Kumo explains that Tsuki's operator must
+  approve it. Told *"Yes, go ahead and send it for approval"*, it pays (shielded txid
+  [`80c31d54…983e`](https://testnet.zcashexplorer.app/transactions/80c31d5442e576601d6c3f0cd1aed04c3f9824a25dfe50778f6e53b2eec5983e)).
+  Tsuki parks the purchase at 17:03:01, a human presses **Approve** on Tsuki's side at 17:03:21, and Bitrefill delivers:
+  invoice **`c0d4eacc-92e9-4d04-a3e0-7413d053d7fc`** (order `6aeb17fdb8b44b12deb0c060`). The agent has no tool that
+  approves.
+
 **The first purchase** (button-driven, before the chat existed):
 
 - **Real purchase invoice ID:** `6df85b58-7e1d-40a1-975e-e136f9b9e5ed` (order `6aeb0c33273062b3038ebfa5`):
@@ -99,8 +106,10 @@ Bitrefill's catalog, invoices and delivery, unchanged.
 - **Most the agent can spend here:** $1.00 per purchase, $3.00 and 3 purchases per day (Asia/Kolkata day), only
   allow-listed products and values (`swiggy-money-india` ₹50, `flipkart-india` ₹50, `airtel-india` ₹10). Set in
   `OBORO_SHOP_ALLOW`; prices always come from Bitrefill, never from the request.
-- **Above that:** nothing is bought. The purchase is parked as `needs_approval`; the operator approves out of band with
-  `pnpm --filter @oboro/agents shop:approve <approval_id>`. No tool the agent can call approves anything.
+- **Above that:** nothing is bought. The purchase is parked as `needs_approval`. A human approves it on Tsuki's side,
+  either with the Shop page's operator **Approve** button (local-only `POST /api/operator/approve`) or with
+  `pnpm --filter @oboro/agents shop:approve <approval_id>`. No tool the agent can call approves anything. (Live:
+  invoice `c0d4eacc…`, above.)
 - **Replays:** one purchase per authorising Zcash txid, reserved in a mode-600 ledger **before** `POST /invoices`, so a
   crash or a replayed payment can't buy twice.
 - **Kumo's side:** its own spend policy (≤ 50,000 zats per call, 300,000 per day, Tsuki only) runs before it pays.
