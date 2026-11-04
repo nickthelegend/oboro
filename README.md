@@ -133,6 +133,11 @@ switch (`OBORO_CHAIN=mainnet`; testnet stays the default and mainnet is refused 
 - **Bitrefill purchase from chat:** *"Get me ₹50 of Swiggy credit"*: Kumo paid 5,000 zats
   ([`51e91b35…0c69`](https://blockchair.com/zcash/transaction/51e91b3520333a842b44c4e7bcc6ec85d3956e3fe3017e634b0aa3ab79d80c69),
   block 3,541,714) and Bitrefill delivered invoice **`01c3fbf9-db34-4b70-869e-348078a70054`** (order `6aeb4e71390889e2b66a5af7`).
+- **Over the cap, human-approved:** *"Get me a ₹250 Blinkit card for groceries."* ($2.77.) Kumo explains it needs Tsuki's
+  operator, is told to go ahead, and pays
+  ([`5a03194b…7d0f`](https://blockchair.com/zcash/transaction/5a03194be2813838d1ef8d47811ad0dd8f5ec1384d800edcac50dceb16657d0f),
+  block 3,541,772). Tsuki parks it; after the operator approves, Bitrefill delivers invoice
+  **`6ec705e7-5ab5-4c42-8f13-ac7483fa1b39`** (order `6aeb5d5f5376aed24165d2d6`).
 
 On the explorer each shows only the 0.0001 ZEC fee leaving the shielded pool: no sender, receiver or amount.
 To run it: put the mainnet wallet dirs and state paths in an env file outside the repo and start with
