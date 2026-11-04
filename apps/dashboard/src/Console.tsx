@@ -103,6 +103,11 @@ export function Console() {
                 </button>
               ))}
               {state && state.catalog.length === 0 && <p className="empty">Tsuki is not advertising anything yet.</p>}
+              <a className="buy buy-shop" href="#/shop">
+                <span className="buy-path mono">/v1/shop/buy</span>
+                <span className="buy-desc">A real Bitrefill gift card, authorised by a shielded payment</span>
+                <span className="buy-price">Shop →</span>
+              </a>
             </div>
             <RunList runs={runs} active={active?.id} onPick={setSelected} />
           </AgentPanel>

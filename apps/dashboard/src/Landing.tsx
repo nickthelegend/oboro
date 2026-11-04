@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { explorer, short, zec } from './api';
+import { useEffect, useState } from 'react';
+import { explorer, getShop, short, zec, type ShopPurchase } from './api';
 import { Logo, Nav, Footer } from './chrome';
 import { useConsole, useProof } from './useConsole';
 
@@ -40,7 +40,8 @@ const MCP_CODE = `{
     }
   }
 }
-// tools: oboro_fetch · oboro_budget · oboro_status`;
+// tools: oboro_fetch · oboro_budget · oboro_status
+//        oboro_shop_search · oboro_shop_product · oboro_shop_buy · oboro_shop_receipt`;
 
 const LEAKS = [
   { row: 'Who paid whom, on chain', plain: 'Public', shielded: 'Hidden', oboro: 'Hidden' },
@@ -102,15 +103,27 @@ const SHOP_FLOW = [
   { t: 'Browse, through the mixnet', d: 'Kumo reads Tsuki’s catalog over Nym. Tsuki fetches it from Bitrefill: real products, real stock, real USD prices.' },
   { t: 'Pay in the dark', d: 'Tsuki answers 402. Kumo checks its own spend policy, then pays 5,000 zats in shielded testnet ZEC, broadcast over Nym.' },
   { t: 'Buy inside the caps', d: 'Tsuki verifies the note with a viewing key, reserves the txid, then creates a Bitrefill invoice paid from its balance.' },
-  { t: 'Delivered, not just paid', d: 'Tsuki polls the invoice and the order until Bitrefill says delivered. The value lands on the phone; any code comes back masked.' },
+  { t: 'Delivered, not just paid', d: 'Tsuki polls the invoice and the order until Bitrefill says delivered. The code lands in Tsuki’s Bitrefill account; the buyer’s copy comes back only in its paid response, masked everywhere else.' },
 ];
 const GUARANTEES: [string, string][] = [
   ['Allow-list', 'Only listed products and values'],
-  ['Caps', '$0.50 per purchase, $1.50 and 3 buys per day'],
+  ['Caps', '$1.00 per purchase, $3.00 and 3 buys per day'],
   ['Above the cap', 'Nothing is bought; a human approves out of band'],
   ['Replay', 'One purchase per Zcash txid, reserved before the invoice'],
   ['Codes', 'Never logged; masked everywhere but the buyer’s paid response'],
 ];
+
+function usePurchases(): ShopPurchase[] {
+  const [rows, setRows] = useState<ShopPurchase[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => getShop().then((s) => alive && setRows(s.tsuki.ledger ?? [])).catch(() => undefined);
+    tick();
+    const t = window.setInterval(tick, 5000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, []);
+  return rows;
+}
 
 export function Landing() {
   const { state, offline } = useConsole(4000);
@@ -122,6 +135,9 @@ export function Landing() {
   const lastRun = state?.runs.find((r) => r.status === 'paid');
   const served = state?.gate.served;
   const recorded = !state && proof ? proof[proof.length - 1] : null;
+  const purchases = usePurchases();
+  const delivered = purchases.filter((p) => p.status === 'delivered');
+  const lastBuy = delivered[delivered.length - 1];
 
   return (
     <div className="page">
@@ -141,7 +157,7 @@ export function Landing() {
           </h1>
           <p className="lede">
             Oboro carries an AI agent’s HTTP request and its Zcash payment through the Nym mixnet. The seller gets paid
-            and serves the call, or buys a real top-up on Bitrefill, without learning who called, from where, or which
+            and serves the call, or buys a real gift card on Bitrefill, without learning who called, from where, or which
             wallet paid.
           </p>
           <div className="ctas">
@@ -200,6 +216,7 @@ export function Landing() {
             <Stat n={served ?? 0} l="requests Tsuki served over the mixnet" />
             <Stat n={paid.length} l="payments settled in shielded ZEC" />
             <Stat n={zec(paid.reduce((a, r) => a + r.priceZats, 0))} l="TAZ paid to Tsuki (testnet ZEC)" />
+            <Stat n={delivered.length} l="real Bitrefill purchases delivered" />
           </>
         ) : (
           <p className="stats-empty">
@@ -309,6 +326,25 @@ export function Landing() {
               Open the shop <span aria-hidden="true">→</span>
             </a>
           </div>
+          <div className="glass last-buy">
+            <div className="glass-head">
+              <span className="chip">{lastBuy ? 'Delivered' : 'Live'}</span> Last real purchase
+            </div>
+            {lastBuy ? (
+              <dl className="saw">
+                <dt>Product</dt>
+                <dd className="moon">{lastBuy.product_id} · ₹{lastBuy.value}</dd>
+                <dt>Paid by Tsuki</dt>
+                <dd>${lastBuy.usd.toFixed(2)} store credit</dd>
+                <dt>Bitrefill invoice</dt>
+                <dd className="mono">{short(lastBuy.invoice_id, 8, 4)}</dd>
+                <dt>Authorised by</dt>
+                <dd className="mono">{lastBuy.txid}</dd>
+              </dl>
+            ) : (
+              <p className="empty">No purchase delivered yet. The first one shows its Bitrefill invoice ID here.</p>
+            )}
+          </div>
         </div>
       </section>
 
@@ -318,7 +354,7 @@ export function Landing() {
           <h2>Ten lines on each side.</h2>
           <p className="sub">
             Agents get a <code>fetch</code> that speaks x402 over Nym. Sellers get an Express paywall that verifies with a
-            viewing key. Any MCP-capable model gets three tools.
+            viewing key. Any MCP-capable model gets seven tools, shopping included.
           </p>
         </div>
         <div className="code-card frame">

@@ -125,7 +125,7 @@ export function Shop() {
             </span>
             <h1 className="console-title">Kumo goes shopping.</h1>
             <p className="shop-lede">
-              An AI agent with no Bitrefill account, no card and no exposed IP buys a real top-up. Its shielded payment to Tsuki
+              An AI agent with no Bitrefill account, no card and no exposed IP buys a real gift card. Its shielded payment to Tsuki
               authorises one purchase; Tsuki pays Bitrefill from event credits, inside hard caps, once per payment.
             </p>
           </div>
