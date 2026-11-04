@@ -1,10 +1,27 @@
-# Oboro 朧: x402 for AI agents over the Nym mixnet, paid in shielded Zcash
+# Oboro 朧: a private checkout rail for AI agents, over the Nym mixnet, paid in shielded Zcash
 
-**One line:** Oboro lets one AI agent pay another for an HTTP API in shielded Zcash. Both the request and the payment
-cross the Nym mixnet, so the seller gets paid without learning who called, from where, or which wallet paid.
+**One line:** Oboro lets an AI agent pay for an API call, or buy a real thing on Bitrefill, in shielded Zcash. The
+HTTP request and the payment both cross the Nym mixnet, so the seller, the merchant and anyone watching the chain can't
+tell which agent bought what.
 
-`oboro` (TypeScript SDK) · `oboro-node` (Rust, Nym mixnet transport) · `@oboro/mcp` (MCP tools) · console + landing.
-Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026, in the Privacy track (Theme 3: privacy beyond the transaction).
+`oboro` (TypeScript SDK) · `oboro-node` (Rust, nym-sdk 1.22.3 transport) · `@oboro/shop` (Bitrefill worker) ·
+`@oboro/mcp` (7 MCP tools) · landing, console and shop. Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026.
+
+## Tracks: entered in Both
+
+| Track | What counts for it |
+|---|---|
+| **Privacy** (Theme 3: privacy beyond the transaction) | x402 over the Nym mixnet: request, 402, payment broadcast and paid retry never touch the seller from an IP. Testnet txids below; privacy and trust note below. |
+| **Agentic Commerce** (Bitrefill, **Lane 5: private by default**) | The loop: an agent's shielded payment over Nym → Tsuki's guardrails → Bitrefill REST v2 invoice paid from store credits → polled to **delivered**. Invoice ID, touchpoints and guardrails below. |
+
+**The loop (Lane 5):** Kumo, an agent with no Bitrefill account, no card and no exposed IP, asks Tsuki's shop over Nym
+→ **guarantee:** Kumo's own spend policy, then a shielded ZEC payment that Tsuki verifies with a viewing key; Tsuki's
+allow-list, per-purchase and daily caps, one purchase per txid → **Bitrefill:** search, quote, invoice, pay from
+balance → **ending:** the order is delivered and the code lands in Tsuki's Bitrefill account; the buyer's copy comes back
+only in its paid response, masked everywhere else.
+
+Honest scope: Bitrefill doesn't take ZEC and has no testnet, so the shielded *testnet* payment **authorises** the
+purchase and Tsuki pays Bitrefill from its store credits (real money, small). We don't claim ZEC paid for the card.
 
 ## Demo
 
@@ -29,6 +46,54 @@ Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026, in the Privacy track (
 | 12:09:26 | Verified with the viewing key (memo, amount, nonce), `200` with Tsuki's data (height 4,581,182) |
 
 Tsuki's gate logged each request as `sender: SURB reply tag only (no IP, no Nym address)`.
+
+## Agentic Commerce: the Bitrefill purchase
+
+- **Real purchase invoice ID:** `6df85b58-7e1d-40a1-975e-e136f9b9e5ed` (order `6aeb0c33273062b3038ebfa5`):
+  Swiggy Money India ₹50, $0.55, paid from Tsuki's Bitrefill store credits, order **delivered** at 16:13:02 IST,
+  4 Nov 2026. The agent pressed it; nothing was bought by hand.
+- **Authorised by** shielded testnet payment
+  [`51fe1cefa34634af9c8b68f34c76ae7730aafd5c6996cc220a15ca3fcfb0f68e`](https://testnet.zcashexplorer.app/transactions/51fe1cefa34634af9c8b68f34c76ae7730aafd5c6996cc220a15ca3fcfb0f68e)
+  (5,000 zats, Kumo → Tsuki, broadcast over Nym).
+- **Watch it:** Shop page `http://127.0.0.1:7430/#/shop` (Run it below), and the video.
+
+| Time (IST) | Step, as the Shop page recorded it |
+|---|---|
+| 16:07:01 | Kumo browses Tsuki's catalog over Nym (`GET nym://Tsuki/v1/shop/search?q=swiggy`) |
+| 16:07:07 | Live Bitrefill quote over Nym: ₹50 = $0.55 |
+| 16:07:10 | `POST /v1/shop/buy` → `402`; Kumo's policy allows 5,000 zats |
+| 16:07:49 | Shielded payment broadcast over Nym, txid `51fe1cef…` |
+| 16:13:02 | Tsuki's viewing key sees the note; txid reserved; Bitrefill invoice created and paid from balance; order `delivered` |
+
+Two earlier attempts paid but bought nothing, and that's the guarantee working. The first (`55d033b5…`) was seen
+only after its 15-minute challenge expired, and the paywall refused it. That's how we found and fixed a real bug:
+the deadline is now for *submitting* a payment, not for verifying it. The second (`2dcaefb8…`) was cut off when we
+restarted Tsuki mid-poll. Neither reached Bitrefill.
+
+### Bitrefill touchpoints: built vs reused
+
+We built a **REST v2 worker** (`packages/shop`): `GET /products/search`, `GET /products/{id}` for the USD price that
+the caps use, `POST /invoices` with `payment_method: "balance"` and `auto_pay: true`, then `GET /invoices/{id}` and
+`GET /orders/{id}` until the order is `delivered`; `complete` alone is never treated as done. It handles 429s
+(exponential backoff with jitter, 5 tries), an expired quote (one fresh invoice, re-checked against the caps), `failed`,
+`refunded`, `blocked`, `denied`, `payment_error` and out-of-stock, and caches the catalog for 10 minutes. The **CLI**
+(`@bitrefill/cli` 0.3.0) is reused as the no-key catalog path, so the shop can browse before an account exists.
+An **MCP interface** sits on top: `@oboro/mcp` exposes `oboro_shop_search`, `oboro_shop_product`, `oboro_shop_buy` and
+`oboro_shop_receipt`, so Claude or any MCP client shops through Oboro's guardrails over Nym, never directly. Reused:
+Bitrefill's catalog, invoices and delivery, unchanged.
+
+### Guardrails
+
+- **Most the agent can spend here:** $1.00 per purchase, $3.00 and 3 purchases per day (Asia/Kolkata day), only
+  allow-listed products and values (`swiggy-money-india` ₹50, `flipkart-india` ₹50, `airtel-india` ₹10). Set in
+  `OBORO_SHOP_ALLOW`; prices always come from Bitrefill, never from the request.
+- **Above that:** nothing is bought. The purchase is parked as `needs_approval`; the operator approves out of band with
+  `pnpm --filter @oboro/agents shop:approve <approval_id>`. No tool the agent can call approves anything.
+- **Replays:** one purchase per authorising Zcash txid, reserved in a mode-600 ledger **before** `POST /invoices`, so a
+  crash or a replayed payment can't buy twice.
+- **Kumo's side:** its own spend policy (≤ 50,000 zats per call, 300,000 per day, Tsuki only) runs before it pays.
+- **Codes are cash:** redemption values are never logged or stored unmasked; the ledger, console and MCP results show
+  the first 2 and last 2 characters only.
 
 ## Who it's for and the problem
 
@@ -94,7 +159,7 @@ Headless instead of the console: `pnpm --filter @oboro/agents buyer --once <Tsuk
 MCP: point any MCP client at `node packages/mcp/dist/index.js` with `OBORO_TUNNEL_URL`, `OBORO_SELLER_NYM_ADDRESS` and
 `OBORO_BUYER_WALLET_DIR` set; tools `oboro_fetch`, `oboro_budget`, `oboro_status`.
 
-Tests: `pnpm -r test` (34 SDK + 1 MCP unit tests), `cargo test --manifest-path crates/Cargo.toml` (6 unit tests),
+Tests: `pnpm -r test` (45 SDK, 21 shop, 2 MCP, 1 agents unit tests), `cargo test --manifest-path crates/Cargo.toml` (6 unit tests),
 live mixnet round trip `cargo test --manifest-path crates/Cargo.toml --test live_roundtrip -- --ignored` (real Nym
 mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTING.md), [crates/RESULT.md](crates/RESULT.md).
 
@@ -104,10 +169,11 @@ mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTIN
 |---|---|
 | `crates/oboro-node` | Rust. `gate` (serve a local HTTP app at a Nym address), `tunnel` (local port → any Nym address), `probe` |
 | `packages/sdk` (`oboro`) | TypeScript. `createAgent` (x402 client + spend policy), `createPaywall` (x402 server), zingo wallet + view-key verifier |
-| `packages/mcp` (`@oboro/mcp`) | MCP server: `oboro_fetch`, `oboro_budget`, `oboro_status` |
-| `apps/agents` | Tsuki (seller) and Kumo (buyer), setup and demo scripts |
-| `apps/dashboard` | Landing page, live console and the console server |
-| `scripts/up.sh`, `down.sh` | Start and stop the whole stack |
+| `packages/shop` (`@oboro/shop`) | Bitrefill REST v2 worker, CLI catalog, guardrails, txid-deduped ledger |
+| `packages/mcp` (`@oboro/mcp`) | MCP server: `oboro_fetch`, `oboro_budget`, `oboro_status`, `oboro_shop_search`, `_product`, `_buy`, `_receipt` |
+| `apps/agents` | Tsuki (seller, with the shop routes) and Kumo (buyer), setup, demo and `shop:approve` scripts |
+| `apps/dashboard` | Landing page, API console, Shop page and the console server |
+| `scripts/up.sh`, `down.sh`, `restart.sh` | Start, stop and restart the stack |
 
 ## Design decisions
 
@@ -164,8 +230,10 @@ mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTIN
 
 ## Next 30 days
 
-1. **Faster settlement:** keep one interactive zingo session per wallet, so verification reads a continuously synced
-   wallet instead of starting a new CLI, mixnet bootstrap and sweep on every check (in progress today).
+1. **Faster settlement:** `ZingoSession` (built today, `OBORO_ZINGO_SESSION=1`) keeps one interactive zingo-cli per
+   wallet: the second call takes 1 ms instead of a fresh spawn. It isn't the default yet. In the live shop run its
+   sync loop never reported 100% while new blocks kept arriving, so checks queued behind it. The demo uses the
+   spawn-per-call verifier (settled in about 5 minutes). Next: read `messages` without waiting on the sync loop.
 2. **Sync over Nym's dVPN** (needs the NYM credentials Nym hands out at the event), so the light-wallet server stops
    seeing the agents' IPs during sync too.
 3. **Publish** `oboro` and `@oboro/mcp` to npm and `oboro-node` to crates.io; open an issue on nym-sdk about data
