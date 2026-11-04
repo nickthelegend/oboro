@@ -2,7 +2,8 @@
 // It reads live status from the two oboro-node processes and Tsuki, and runs Kumo (the buyer agent)
 // through the real SDK when you press a button. Nothing here is simulated: if a piece is down, /api/state says so.
 import express from 'express';
-import { existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -229,6 +230,186 @@ app.post('/api/run', async (req, res) => {
     refreshBalance(true);
   }
 });
+
+// ───────────────────────── Shop: Kumo buys a real thing through Tsuki's Bitrefill shop ─────────────────────────
+// Every step crosses the Nym mixnet: browse (free), quote (free), then a paid POST whose shielded payment
+// authorises one Bitrefill purchase that Tsuki pays from its event credits. Codes never reach this UI unmasked.
+type ShopStep = { ts: string; type: string; detail?: string; txid?: string; zats?: number; usd?: number; mixMs?: number; status?: number };
+type ShopRun = {
+  id: string; startedAt: string; finishedAt?: string;
+  status: 'running' | 'delivered' | 'processing' | 'needs_approval' | 'refused' | 'failed';
+  product?: { id: string; name: string; value: string; currency: string; usd: number };
+  phoneMasked?: string; txid?: string; invoiceId?: string; orderId?: string; receiptId?: string;
+  redemptionMasked?: Record<string, string>; steps: ShopStep[]; error?: string;
+};
+const shopRuns: ShopRun[] = [];
+const maskValue = (v: string) => (v.length <= 4 ? '•'.repeat(v.length) : `${v.slice(0, 2)}${'•'.repeat(Math.min(10, v.length - 4))}${v.slice(-2)}`);
+const maskRedemption = (r: unknown): Record<string, string> | undefined => {
+  if (!r || typeof r !== 'object') return undefined;
+  return Object.fromEntries(Object.entries(r as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => [k, k === 'instructions' ? 'present' : maskValue(String(v))]));
+};
+const maskPhone = (p?: string) => (p ? `${p.slice(0, 3)} ••••• ${p.slice(-4)}` : undefined);
+
+async function viaNym(tsuki: string, path: string, init: RequestInit = {}) {
+  const started = Date.now();
+  const res = await fetch(`${TUNNEL}/nym/${encodeURIComponent(tsuki)}${path}`, { ...init, signal: AbortSignal.timeout(130_000) });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body: body as Record<string, unknown>, mixMs: Number(res.headers.get('x-oboro-mix-ms')) || Date.now() - started };
+}
+
+app.get('/api/shop', async (_req, res) => {
+  const shop = await getJson<Record<string, unknown>>(`${SELLER}/oboro/shop`).catch((e) => ({ error: errMsg(e) }));
+  const setup: string[] = [];
+  if (!process.env.OBORO_SHOP_PHONE) setup.push('OBORO_SHOP_PHONE');
+  res.json({ tsuki: shop, consoleSetup: setup, phoneMasked: maskPhone(process.env.OBORO_SHOP_PHONE), runs: shopRuns.slice(0, 10) });
+});
+
+// Free catalog read through the mixnet, cached for a minute: the Shop page's live quote before any errand.
+let quoteCache: { at: number; body?: unknown; mixMs?: number; error?: string } = { at: 0 };
+app.get('/api/shop/quote', async (_req, res) => {
+  if (Date.now() - quoteCache.at < 60_000 && (quoteCache.body || quoteCache.error)) return res.json({ ...quoteCache, cached: true });
+  const tsuki = await sellerNymAddress();
+  if (!tsuki) return res.status(412).json({ error: 'Setup required: Tsuki’s gate is not running (no Nym address)' });
+  try {
+    const q = await viaNym(tsuki, '/v1/shop/product/airtel-india');
+    quoteCache = q.status === 200 ? { at: Date.now(), body: q.body, mixMs: q.mixMs } : { at: Date.now(), error: String(q.body.error ?? `HTTP ${q.status}`) };
+  } catch (e) {
+    quoteCache = { at: Date.now(), error: errMsg(e) };
+  }
+  res.json({ ...quoteCache, cached: false });
+});
+
+app.post('/api/shop/run', async (req, res) => {
+  const productId = String(req.body?.product_id ?? 'airtel-india');
+  const value = String(req.body?.value ?? '10');
+  if (!/^[a-z0-9-]{1,100}$/.test(productId) || !/^\d+(\.\d+)?$/.test(value)) return res.status(400).json({ error: 'product_id and value are required' });
+  if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return res.status(409).json({ error: 'Kumo is already paying for something' });
+  const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
+  if (!buyerDir) return res.status(412).json({ error: 'Setup required: OBORO_BUYER_WALLET_DIR' });
+  const phone = process.env.OBORO_SHOP_PHONE;
+  if (productId === 'airtel-india' && !phone) return res.status(412).json({ error: 'Setup required: a phone number for the top-up (Setup card)' });
+  const tsuki = await sellerNymAddress();
+  if (!tsuki) return res.status(412).json({ error: 'Setup required: Tsuki’s gate is not running (no Nym address)' });
+
+  const run: ShopRun = { id: randomUUID(), startedAt: new Date().toISOString(), status: 'running', phoneMasked: maskPhone(phone), steps: [] };
+  shopRuns.unshift(run);
+  res.json({ id: run.id });
+  const push = (s: Omit<ShopStep, 'ts'>) => run.steps.push({ ts: new Date().toISOString(), ...s });
+
+  try {
+    // 1. Browse Tsuki's catalog (free). Tsuki reads it from Bitrefill.
+    push({ type: 'browse', detail: `GET nym://Tsuki/v1/shop/search?q=${productId.split('-')[0]}` });
+    const search = await viaNym(tsuki, `/v1/shop/search?q=${encodeURIComponent(productId.split('-')[0])}`);
+    if (search.status !== 200) throw new Error(`Catalog search failed: ${String(search.body.error ?? search.status)}`);
+    const found = (search.body.products as { id: string; name: string; in_stock: boolean }[] | undefined) ?? [];
+    push({ type: 'browsed', mixMs: search.mixMs, detail: `${found.length} Bitrefill products; ${found.some((p) => p.id === productId) ? `${productId} in the list` : `${productId} not in the first page`}` });
+
+    // 2. Quote: the package's USD price comes from Bitrefill, never from the request.
+    const quote = await viaNym(tsuki, `/v1/shop/product/${productId}`);
+    if (quote.status !== 200) throw new Error(`Product lookup failed: ${String(quote.body.error ?? quote.status)}`);
+    const pkgs = (quote.body.packages as { value: string; usd: number; currency: string }[] | undefined) ?? [];
+    const pkg = pkgs.find((p) => String(p.value) === value);
+    if (!pkg) throw new Error(`${productId} has no ${value} package`);
+    if (quote.body.in_stock === false) throw new Error(`${productId} is out of stock`);
+    run.product = { id: productId, name: String(quote.body.name ?? productId), value, currency: pkg.currency || String(quote.body.currency ?? ''), usd: pkg.usd };
+    push({ type: 'quoted', usd: pkg.usd, mixMs: quote.mixMs, detail: `${run.product.name}: ${value} ${run.product.currency} = $${pkg.usd.toFixed(2)} (Bitrefill price)` });
+
+    // 3. Pay Tsuki in shielded ZEC over Nym; the paid POST is the purchase authorisation.
+    const agent = createAgent({
+      tunnelUrl: TUNNEL,
+      wallet: new ZingoWallet({ dataDir: buyerDir }),
+      policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [tsuki] },
+      spendFile: SPEND_FILE,
+      onEvent: (e: AgentEvent) => {
+        switch (e.type) {
+          case 'payment_required': return push({ type: 'payment_required', zats: e.amountZats, detail: 'Tsuki asks for a shielded payment to authorise the purchase' });
+          case 'policy_ok': return push({ type: 'policy_ok', zats: e.amountZats, detail: `Kumo’s policy: ≤ ${MAX_PER.toLocaleString('en-US')} zats per call, ${DAILY.toLocaleString('en-US')} per day, Tsuki only` });
+          case 'policy_refused': return push({ type: 'policy_refused', detail: e.reason });
+          case 'paying': return push({ type: 'paying', zats: e.amountZats, detail: 'zingo-cli quicksend, broadcast over the Nym mixnet' });
+          case 'paid': run.txid = e.txid; return push({ type: 'paid', txid: e.txid, detail: `txid ${e.txid.slice(0, 16)}…` });
+          case 'pending': if (run.steps[run.steps.length - 1]?.type === 'pending') return; return push({ type: 'pending', detail: 'Waiting for Tsuki’s viewing key to see the mined note (NU7 blocks ≈ 25 s)' });
+          case 'settled': return push({ type: 'settled', detail: 'Tsuki verified amount, memo and nonce; txid reserved before any Bitrefill call' });
+          default: return;
+        }
+      },
+    });
+    push({ type: 'request', detail: `POST nym://Tsuki/v1/shop/buy {${productId}, ${value}${phone ? ', phone' : ''}}` });
+    const buy = await agent.fetch(`nym://${tsuki}/v1/shop/buy`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ product_id: productId, value, ...(phone ? { phone_number: phone } : {}) }) });
+    let body = (await buy.json().catch(() => ({}))) as Record<string, unknown>;
+    let status = buy.status;
+    push({ type: 'bitrefill', status, detail: status === 200 ? 'Bitrefill invoice paid from Tsuki’s balance; order delivered' : `Tsuki answered ${status} ${String(body.status ?? body.code ?? '')}` });
+
+    // 4. Long fulfilment: poll the receipt (free, bearer receipt id) until delivered.
+    const deadline = Date.now() + 5 * 60_000;
+    while (status === 202 && body.status === 'processing' && body.receipt_id && Date.now() < deadline) {
+      run.receiptId = String(body.receipt_id);
+      push({ type: 'processing', detail: 'Bitrefill order processing; polling the receipt over Nym' });
+      await new Promise((r) => setTimeout(r, 5000));
+      const r = await viaNym(tsuki, `/v1/shop/receipt/${run.receiptId}`);
+      status = r.status; body = r.body;
+    }
+    if (status === 200 && body.status === 'delivered') {
+      run.status = 'delivered';
+      run.invoiceId = String(body.invoice_id ?? '');
+      run.orderId = String(body.order_id ?? '');
+      run.redemptionMasked = maskRedemption(body.redemption);
+      push({ type: 'delivered', usd: Number(body.usd) || run.product.usd, detail: `Invoice ${run.invoiceId} · order ${run.orderId} delivered` });
+    } else if (status === 202 && body.status === 'needs_approval') {
+      run.status = 'needs_approval';
+      push({ type: 'needs_approval', detail: 'Above the caps: nothing bought. A human approves out of band with pnpm --filter @oboro/agents shop:approve <id>' });
+    } else if (status === 202) {
+      run.status = 'processing';
+    } else {
+      run.status = 'failed';
+      run.error = String(body.error ?? body.code ?? `HTTP ${status}`);
+      push({ type: 'error', detail: run.error });
+    }
+  } catch (e) {
+    run.status = e instanceof OboroError && e.code === 'policy_refused' ? 'refused' : 'failed';
+    run.error = errMsg(e);
+    push({ type: run.status === 'refused' ? 'policy_refused' : 'error', detail: run.error });
+  } finally {
+    run.finishedAt = new Date().toISOString();
+    refreshBalance(true);
+  }
+});
+
+// Setup card: the operator pastes the Bitrefill key and phone here (localhost only). They go straight into the
+// gitignored .env (mode 600) and are never echoed back; Tsuki is restarted so its Bitrefill client picks them up.
+app.post('/api/setup/shop', async (req, res) => {
+  const ip = req.socket.remoteAddress ?? '';
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return res.status(403).json({ error: 'Setup is local only' });
+  const updates: Record<string, string> = {};
+  const key = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+  const phone = typeof req.body?.phone === 'string' ? req.body.phone.replace(/[\s-]/g, '') : '';
+  if (key) { if (!/^[A-Za-z0-9._-]{16,200}$/.test(key)) return res.status(400).json({ error: 'That does not look like a Bitrefill API key' }); updates.BITREFILL_API_KEY = key; }
+  if (phone) { if (!/^\+[1-9]\d{7,14}$/.test(phone)) return res.status(400).json({ error: 'Phone must be international, e.g. +91 98xxxxxxxx' }); updates.OBORO_SHOP_PHONE = phone; }
+  if (req.body?.liveBuy === true) updates.OBORO_BITREFILL_LIVE_BUY = '1';
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Nothing to save' });
+  const lines = existsSync(envFile) ? readFileSync(envFile, 'utf8').split('\n') : [];
+  for (const [k, v] of Object.entries(updates)) {
+    const i = lines.findIndex((l) => l.startsWith(`${k}=`));
+    if (i >= 0) lines[i] = `${k}=${v}`; else lines.push(`${k}=${v}`);
+    process.env[k] = v;
+  }
+  writeFileSync(envFile, lines.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 });
+  chmodSync(envFile, 0o600);
+  const restarted = updates.BITREFILL_API_KEY || updates.OBORO_BITREFILL_LIVE_BUY ? restartTsuki() : false;
+  res.json({ saved: Object.keys(updates), restartedTsuki: restarted });
+});
+
+function restartTsuki(): boolean {
+  const pidsFile = join(repo, '.oboro/pids');
+  if (!existsSync(pidsFile)) return false;
+  const rows = readFileSync(pidsFile, 'utf8').trim().split('\n').map((l) => l.split(' '));
+  const old = rows.find((r) => r[1] === 'tsuki');
+  if (old) { try { execFileSync('pkill', ['-TERM', '-P', old[0]]); } catch { /* no children */ } try { process.kill(Number(old[0])); } catch { /* gone */ } }
+  const log = openSync(join(repo, '.oboro/logs/tsuki.log'), 'a', 0o600);
+  const child = spawn('pnpm', ['--filter', '@oboro/agents', 'exec', 'tsx', 'src/seller.ts'], { cwd: repo, env: process.env, detached: true, stdio: ['ignore', log, log] });
+  child.unref();
+  writeFileSync(pidsFile, [...rows.filter((r) => r[1] !== 'tsuki'), [String(child.pid), 'tsuki']].map((r) => r.join(' ')).join('\n') + '\n');
+  return true;
+}
 
 // Production: serve the built dashboard from the same origin.
 const dist = join(here, 'dist');

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { Landing } from './Landing';
 import { Console } from './Console';
+import { Shop } from './Shop';
 
 function useRoute() {
   const [hash, setHash] = useState(() => window.location.hash);
@@ -14,12 +15,12 @@ function useRoute() {
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
-  return hash.startsWith('#/console') ? 'console' : 'landing';
+  return hash.startsWith('#/console') ? 'console' : hash.startsWith('#/shop') ? 'shop' : 'landing';
 }
 
 function App() {
   const route = useRoute();
-  return route === 'console' ? <Console /> : <Landing />;
+  return route === 'console' ? <Console /> : route === 'shop' ? <Shop /> : <Landing />;
 }
 
 createRoot(document.getElementById('root')!).render(

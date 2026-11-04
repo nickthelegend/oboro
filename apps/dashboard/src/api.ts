@@ -109,4 +109,39 @@ export const short = (s?: string, a = 8, b = 6) =>
 export const zec = (zats?: number) =>
   zats === undefined ? '—' : (zats / 1e8).toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 8 });
 
-export const explorer = (txid: string) => `https://zexplorer.app/testnet/tx/${txid}`;
+// testnet.zcashexplorer.app indexes NU7 testnet; Zexplorer's testnet index is stale (see FEEDBACK.md).
+export const explorer = (txid: string) => `https://testnet.zcashexplorer.app/transactions/${txid}`;
+
+// ───────── Shop (Bitrefill through Tsuki) ─────────
+export type ShopStep = { ts: string; type: string; detail?: string; txid?: string; zats?: number; usd?: number; mixMs?: number; status?: number };
+export type ShopRun = {
+  id: string; startedAt: string; finishedAt?: string;
+  status: 'running' | 'delivered' | 'processing' | 'needs_approval' | 'refused' | 'failed';
+  product?: { id: string; name: string; value: string; currency: string; usd: number };
+  phoneMasked?: string; txid?: string; invoiceId?: string; orderId?: string;
+  redemptionMasked?: Record<string, string>; steps: ShopStep[]; error?: string;
+};
+export type ShopPurchase = { txid: string; status: string; product_id: string; value: string; usd: number; phone_masked?: string; invoice_id?: string; order_ids: string[]; code_masked?: Record<string, unknown>; created_at: string; updated_at: string };
+export type ShopState = {
+  tsuki: { ledger?: ShopPurchase[]; guardrails?: { allow: { product_id: string; values: (string | number)[] }[]; maxUsdPerPurchase: number; maxUsdPerDay: number; maxPurchasesPerDay: number }; today?: { usd: number; count: number }; setup?: string[]; error?: string };
+  consoleSetup: string[];
+  phoneMasked?: string;
+  runs: ShopRun[];
+};
+export async function getShop(signal?: AbortSignal): Promise<ShopState> {
+  const res = await fetch('/api/shop', { signal });
+  if (!res.ok) throw new Error(`console server answered ${res.status}`);
+  return res.json();
+}
+export async function startShopRun(product_id: string, value: string): Promise<{ id: string }> {
+  const res = await fetch('/api/shop/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ product_id, value }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `run refused (${res.status})`);
+  return body;
+}
+export async function saveShopSetup(input: { apiKey?: string; phone?: string; liveBuy?: boolean }): Promise<{ saved: string[]; restartedTsuki: boolean }> {
+  const res = await fetch('/api/setup/shop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `setup refused (${res.status})`);
+  return body;
+}

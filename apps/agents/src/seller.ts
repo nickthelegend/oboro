@@ -2,7 +2,8 @@ import './env.js';
 import express from 'express';
 import { createPaywall, required, runZingo, ZingoViewVerifier, ZingoWallet } from 'oboro';
 import { repoPath } from './env.js';
-
+import { BitrefillClient, Guardrails, ShopLedger } from '@oboro/shop';
+import { mountShop } from './shop-routes.js';
 
 const wallet = new ZingoWallet({ dataDir: required('OBORO_SELLER_WALLET_DIR') });
 const payTo = process.env.OBORO_SELLER_ADDRESS || await wallet.unifiedAddress();
@@ -11,6 +12,7 @@ process.env.OBORO_ZINGO_SESSION ??= '1';
 const paywall = createPaywall({ payTo, verifier: new ZingoViewVerifier({ dataDir: viewDir }), stateFile: repoPath(process.env.OBORO_PAYWALL_STATE ?? '.oboro/paywall.json'), network: 'zcash-testnet' });
 const app = express();
 app.disable('x-powered-by');
+app.use(express.json({ limit: '8kb' }));
 app.get('/healthz', (_req, res) => res.json({ ok: true, agent: 'Tsuki' }));
 app.get('/v1/intel/tip', paywall.price(2_000, 'Latest Zcash testnet height'), async (_req, res, next) => {
   try {
@@ -28,6 +30,8 @@ app.get('/oboro/ledger', async (_req, res, next) => {
     res.json({ agent: 'Tsuki', payTo, ledger, sellerSaw: { mixnetPeer: '127.0.0.1', payerAddress: null, explanation: 'The gate forwards a local HTTP request; shielded payments do not reveal a payer address to this service.' } });
   } catch (error) { next(error); }
 });
+// Bitrefill shop: free catalog, a paid x402 purchase authorisation, a masked ledger for the console.
+mountShop(app, { paywall, client: new BitrefillClient(), guardrails: new Guardrails(), ledger: new ShopLedger(repoPath(process.env.OBORO_SHOP_LEDGER ?? '.oboro/shop.json')) });
 app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error.message); res.status(500).json({ error: 'internal_error' }); });
 const server = app.listen(7420, '127.0.0.1', () => console.log(JSON.stringify({ agent: 'Tsuki', listening: '127.0.0.1:7420' })));
 process.on('SIGTERM', () => server.close());

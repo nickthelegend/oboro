@@ -40,8 +40,15 @@ export function Nav({ console = false }: { console?: boolean }) {
       </a>
       <div className="nav-actions">
         <span className="net-pill mono">testnet</span>
-        {!console && (
+        <a className="nav-shop hide-sm" href="#/shop">
+          Shop
+        </a>
+        {!console ? (
           <a className="btn btn-moon btn-sm" href="#/console">
+            Console
+          </a>
+        ) : (
+          <a className="btn btn-ghost btn-sm" href="#/console">
             Console
           </a>
         )}
@@ -65,6 +72,7 @@ export function Footer() {
           <div>
             <h4>Product</h4>
             <a href="#/console">Console</a>
+            <a href="#/shop">Shop</a>
             <a href="#sdk">SDK</a>
             <a href="#how">How it works</a>
           </div>
