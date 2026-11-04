@@ -19,6 +19,15 @@ describe('x402 wire format', () => {
   it('rejects malformed X-PAYMENT', () => expect(() => decodePayment('e30=')).toThrow());
   it('rejects mainnet wallet', () => expect(() => new ZingoWallet({ dataDir: '/tmp/x', chain: 'mainnet' })).toThrow());
   it('rejects mainnet verifier', () => expect(() => new ZingoViewVerifier({ dataDir: '/tmp/x', chain: 'mainnet' })).toThrow());
+  it('round trips a mainnet challenge', () => {
+    const c = buildChallenge('u1recipient', '/tip', 2000, 'tip', nonce, undefined, undefined, 'zcash-mainnet');
+    expect(parseChallenge(c, 'zcash-mainnet').accepts[0].network).toBe('zcash-mainnet');
+  });
+  it('rejects a challenge with a mismatched address prefix', () => {
+    const c = buildChallenge('utest1recipient', '/tip', 2000, 'tip', nonce);
+    c.accepts[0].network = 'zcash-mainnet';
+    expect(() => parseChallenge(c)).toThrowError(expect.objectContaining({ code: 'network_mismatch' }));
+  });
 });
 describe('captured offline zingo output shapes', () => {
   const capturedTransfer = `{"value_transfers":[{"txid":"656d03c9760ad158584cc2552cdb1d3d5c349ea0e766bcd5231485760dcdaa66","datetime":1793141430,"status":"confirmed","blockheight":4548940,"kind":"received","value":128000,"recipient_address":null,"pools_sent_from":[],"pools_received":["Ironwood"],"memos":["sba1:41326350051297043999027461969186965087:seller"]}]}`;

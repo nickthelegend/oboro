@@ -20,6 +20,22 @@ async function fixture() {
   return { wall, call, stateFile, setResult: (v: typeof result) => { result = v; }, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 describe('paywall replay and verification state machine (unit only)', () => {
+  it('refuses mainnet without an explicit OBORO_CHAIN=mainnet', () => {
+    const old = process.env.OBORO_CHAIN;
+    delete process.env.OBORO_CHAIN;
+    try { expect(() => createPaywall({ payTo: 'u1seller', stateFile: '/tmp/unused', network: 'zcash-mainnet', verifier: { find: async () => ({ found: false, valueZats: 0, memo: '', height: 0, confirmations: 0 }) } })).toThrow(); }
+    finally { if (old === undefined) delete process.env.OBORO_CHAIN; else process.env.OBORO_CHAIN = old; }
+  });
+  it('issues a mainnet challenge only after the environment gate is set', async () => {
+    const old = process.env.OBORO_CHAIN;
+    process.env.OBORO_CHAIN = 'mainnet';
+    const dir = await mkdtemp(join(tmpdir(), 'oboro-mainnet-wall-'));
+    try {
+      const wall = createPaywall({ payTo: 'u1seller', stateFile: join(dir, 'state.json'), network: 'zcash-mainnet', verifier: { find: async () => ({ found: false, valueZats: 0, memo: '', height: 0, confirmations: 0 }) } });
+      const result = await wall.authorize({ path: '/tip', priceZats: 2000, description: 'tip', viaMixnet: true });
+      expect(result).toMatchObject({ authorized: false, body: { accepts: [{ network: 'zcash-mainnet', payTo: 'u1seller' }] } });
+    } finally { await rm(dir, { recursive: true, force: true }); if (old === undefined) delete process.env.OBORO_CHAIN; else process.env.OBORO_CHAIN = old; }
+  });
   it('exposes a framework-agnostic authorization decision', async () => { const f = await fixture(); const decision = await f.wall.authorize({ path: '/tip', priceZats: 2000, description: 'tip', viaMixnet: true }); expect(decision).toMatchObject({ authorized: false, status: 402, body: { error: 'payment_required' } }); await f.cleanup(); });
   it('issues an exact x402 challenge and records mixnet metadata', async () => { const f = await fixture(); const r = await f.call(); expect(r.status).toBe(402); expect(r.body.accepts[0].maxAmountRequired).toBe('2000'); expect((await f.wall.ledger())[0]).toMatchObject({ viaMixnet: true, sellerSaw: { ip: '127.0.0.1', payerAddress: null } }); await f.cleanup(); });
   it('redeems a confirmed transfer once', async () => { const f = await fixture(); const challenge = (await f.call()).body; const nonce = challenge.accepts[0].extra.nonce; f.setResult({ found: true, valueZats: 2000, memo: `oboro:${nonce}`, height: 100, confirmations: 2 }); const header = encodePayment(txid, nonce); const paid = await f.call(header); expect(paid.next).toBe(true); expect(paid.headers['X-PAYMENT-RESPONSE']).toBeTruthy(); expect((await f.call(header)).body.error).toBe('nonce_reused'); await f.cleanup(); });

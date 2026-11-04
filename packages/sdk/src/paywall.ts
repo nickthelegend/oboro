@@ -2,6 +2,7 @@ import { OboroError } from './errors.js';
 import { buildChallenge, decodePayment, type Challenge } from './protocol.js';
 import { atomicJson, readJson } from './storage.js';
 import type { Verification } from './verifier.js';
+import { addressPrefix, networkFor, resolveChain, type Network } from './chain.js';
 
 export interface LedgerEntry { ts: string; path: string; priceZats: number; txid?: string; height?: number; status: string; viaMixnet: boolean; sellerSaw: { ip: '127.0.0.1' | 'direct'; payerAddress: null } }
 interface NonceState { path: string; priceZats: number; expiresAt: string; redeemedTxid?: string; claimedTxid?: string; claimedAt?: string }
@@ -15,10 +16,10 @@ type Verifier = { find(txid: string, nonce: string, minZats: number): Promise<Ve
 type RequestHandler = (req: { path: string; get(name: string): string | undefined }, res: { status(code: number): { json(body: unknown): void }; set(name: string, value: string): void }, next: (error?: unknown) => void) => void;
 const denied = (error: string, headers: Record<string, string> = {}): PaywallDecision => ({ authorized: false, status: 402, body: { error }, headers });
 
-export function createPaywall(options: { payTo: string; verifier: Verifier; stateFile: string; network: string; verificationWaitMs?: number }) {
-  if (options.network !== 'zcash-testnet') throw new OboroError('network_refused', 'Only Zcash testnet is supported');
+export function createPaywall(options: { payTo: string; verifier: Verifier; stateFile: string; network: Network; verificationWaitMs?: number }) {
+  if (options.network !== networkFor(resolveChain())) throw new OboroError('network_refused', 'Paywall network does not match OBORO_CHAIN');
   if (!options.payTo) throw new OboroError('setup_required', 'Setup required: OBORO_SELLER_ADDRESS');
-  if (!options.payTo.startsWith('utest1')) throw new OboroError('network_refused', 'Only Zcash testnet unified addresses are supported');
+  if (!options.payTo.startsWith(addressPrefix(options.network))) throw new OboroError('network_mismatch', 'Pay-to address does not match paywall network');
   if (!options.stateFile) throw new OboroError('setup_required', 'Setup required: paywall stateFile');
   let queue = Promise.resolve();
   const transact = <T>(fn: (state: State) => Promise<T> | T): Promise<T> => {
@@ -32,12 +33,13 @@ export function createPaywall(options: { payTo: string; verifier: Verifier; stat
     if (!Number.isSafeInteger(priceZats) || priceZats <= 0) throw new OboroError('invalid_price', 'Invalid price');
     const base = { ts: new Date().toISOString(), path, priceZats, viaMixnet, sellerSaw: { ip: viaMixnet ? '127.0.0.1' : 'direct', payerAddress: null } } as const;
     if (!paymentHeader) {
-      const challenge = buildChallenge(options.payTo, path, priceZats, description);
+      const challenge = buildChallenge(options.payTo, path, priceZats, description, undefined, undefined, undefined, options.network);
       await transact(s => { s.nonces[challenge.accepts[0].extra.nonce] = { path, priceZats, expiresAt: challenge.accepts[0].extra.expiresAt }; s.ledger.push({ ...base, status: 'payment_required' }); });
       return { authorized: false, status: 402, body: challenge, headers: {} };
     }
     let payment;
     try { payment = decodePayment(paymentHeader); } catch { return denied('payment_malformed'); }
+    if (payment.network !== options.network) return denied('network_mismatch');
     const { txid, nonce } = payment.payload;
     const check = await transact(s => {
       const n = s.nonces[nonce];
@@ -80,7 +82,7 @@ export function createPaywall(options: { payTo: string; verifier: Verifier; stat
       return null;
     });
     if (race) return denied(race);
-    return { authorized: true, headers: { 'X-PAYMENT-RESPONSE': Buffer.from(JSON.stringify({ success: true, txid, network: 'zcash-testnet', height: verification.height })).toString('base64') } };
+    return { authorized: true, headers: { 'X-PAYMENT-RESPONSE': Buffer.from(JSON.stringify({ success: true, txid, network: options.network, height: verification.height })).toString('base64') } };
   }
   function price(priceZats: number, description: string): RequestHandler {
     if (!Number.isSafeInteger(priceZats) || priceZats <= 0) throw new OboroError('invalid_price', 'Invalid price');

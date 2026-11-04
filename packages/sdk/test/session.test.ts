@@ -50,12 +50,15 @@ for line in sys.stdin:
 const sessions: ZingoSession[] = [];
 const originalCli = process.env.OBORO_ZINGO_CLI;
 const originalSession = process.env.OBORO_ZINGO_SESSION;
+const originalLock = process.env.OBORO_ZINGO_LOCK_PATH;
 afterEach(async () => {
   await Promise.all(sessions.splice(0).map(session => session.close()));
   if (originalCli === undefined) delete process.env.OBORO_ZINGO_CLI;
   else process.env.OBORO_ZINGO_CLI = originalCli;
   if (originalSession === undefined) delete process.env.OBORO_ZINGO_SESSION;
   else process.env.OBORO_ZINGO_SESSION = originalSession;
+  if (originalLock === undefined) delete process.env.OBORO_ZINGO_LOCK_PATH;
+  else process.env.OBORO_ZINGO_LOCK_PATH = originalLock;
 });
 async function fakeSession(): Promise<ZingoSession> {
   const dir = await mkdtemp(join(tmpdir(), 'oboro-session-test-'));
@@ -63,6 +66,7 @@ async function fakeSession(): Promise<ZingoSession> {
   await writeFile(cli, fakeCli, { mode: 0o700 });
   await chmod(cli, 0o700);
   process.env.OBORO_ZINGO_CLI = cli;
+  process.env.OBORO_ZINGO_LOCK_PATH = join(dir, 'global.lock');
   const session = ZingoSession.forWallet(dir);
   sessions.push(session);
   return session;

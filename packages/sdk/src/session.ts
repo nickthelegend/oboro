@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import { OboroError, required } from './errors.js';
+import { resolveChain, type Chain } from './chain.js';
 
 export function redactZingo(value: string): string {
   return value
@@ -13,6 +14,7 @@ export function redactZingo(value: string): string {
 }
 
 export interface InteractiveFrame { output: string; prompt: string }
+export const zingoGlobalLockPath = (): string => process.env.OBORO_ZINGO_LOCK_PATH ?? '/tmp/oboro-zingo.lock';
 
 // Captured from the real seller view wallet on 2026-11-04: startup printed
 // "Launching sync task...", then "(test) Block:0 [Syncing] >> ". `height`
@@ -20,7 +22,7 @@ export interface InteractiveFrame { output: string; prompt: string }
 // `sync status` printed JSON scan ranges and percentages; `sync run` replied
 // "Sync task already running." while the startup sync task was active. The
 // prompt, rather than a newline or JSON brace, ends each interactive command.
-const PROMPT = /(?:^|\r?\n)(\(test\) Block:\d+(?: \[[^\]\r\n]*\])? >> )/;
+const PROMPT = /(?:^|\r?\n)(\((?:test|main)\) Block:\d+(?: \[[^\]\r\n]*\])? >> )/;
 export class InteractiveFramer {
   private pending = '';
   feed(chunk: string): InteractiveFrame[] {
@@ -44,11 +46,11 @@ export class InteractiveFramer {
 // when the first prompt arrives so other wallets can run while this one stays up.
 const PY_SESSION = `import fcntl,os,re,subprocess,sys,threading,signal
 os.umask(0o077)
-global_lock=open('/tmp/oboro-zingo.lock','a+')
+global_lock=open(sys.argv[1],'a+')
 fcntl.flock(global_lock,fcntl.LOCK_EX)
-wallet_lock=open(sys.argv[1],'a+')
+wallet_lock=open(sys.argv[2],'a+')
 fcntl.flock(wallet_lock,fcntl.LOCK_EX)
-p=subprocess.Popen(sys.argv[2:],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,bufsize=0)
+p=subprocess.Popen(sys.argv[3:],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,bufsize=0)
 def input_loop():
  try:
   while True:
@@ -66,7 +68,7 @@ try:
   os.write(1,data)
   if startup:
    tail=(tail+data)[-512:]
-   if re.search(rb'\\(test\\) Block:\\d+(?: \\[[^\\]\\r\\n]*\\])? >> ',tail):
+   if re.search(rb'\\((?:test|main)\\) Block:\\d+(?: \\[[^\\]\\r\\n]*\\])? >> ',tail):
     fcntl.flock(global_lock,fcntl.LOCK_UN)
     startup=False
 finally:
@@ -83,10 +85,11 @@ process.once('exit', () => { for (const pid of activeGroups) { try { process.kil
 export class ZingoSession extends EventEmitter {
   private static sessions = new Map<string, ZingoSession>();
   static lockPath(dataDir: string): string { return `/tmp/oboro-zingo-${createHash('sha256').update(resolve(dataDir)).digest('hex').slice(0, 24)}.lock`; }
-  static forWallet(dataDir: string): ZingoSession {
-    const key = resolve(dataDir);
+  static forWallet(dataDir: string, chain?: Chain): ZingoSession {
+    const selected = resolveChain(chain);
+    const key = `${selected}:${resolve(dataDir)}`;
     let session = this.sessions.get(key);
-    if (!session) { session = new ZingoSession(key); this.sessions.set(key, session); }
+    if (!session) { session = new ZingoSession(resolve(dataDir), selected); this.sessions.set(key, session); }
     return session;
   }
 
@@ -104,7 +107,7 @@ export class ZingoSession extends EventEmitter {
   private lastSync = 0;
   private syncedHeight = 0;
 
-  constructor(readonly dataDir: string) { super(); }
+  constructor(readonly dataDir: string, readonly chain: Chain = resolveChain()) { super(); }
 
   private start(): Promise<void> {
     if (this.closing) return Promise.reject(new OboroError('zingo_closed', 'zingo session is closed'));
@@ -113,7 +116,7 @@ export class ZingoSession extends EventEmitter {
     this.ready = new Promise<void>((resolveReady, rejectReady) => {
       const cli = required('OBORO_ZINGO_CLI');
       const server = process.env.OBORO_LIGHTWALLETD;
-      const args = [ZingoSession.lockPath(this.dataDir), cli, '--chain', 'testnet', '--data-dir', this.dataDir, '--online', ...(server ? ['--server', server] : [])];
+      const args = [zingoGlobalLockPath(), ZingoSession.lockPath(this.dataDir), cli, '--chain', this.chain, '--data-dir', this.dataDir, '--online', ...(server ? ['--server', server] : [])];
       const child = spawn('python3', ['-u', '-c', PY_SESSION, ...args], { detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
       if (child.pid) activeGroups.add(child.pid);
@@ -223,7 +226,7 @@ export class ZingoSession extends EventEmitter {
 
   async close(): Promise<void> {
     this.closing = true;
-    ZingoSession.sessions.delete(resolve(this.dataDir));
+    ZingoSession.sessions.delete(`${this.chain}:${resolve(this.dataDir)}`);
     if (this.loop) clearInterval(this.loop);
     const child = this.child;
     if (!child) return;

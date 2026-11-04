@@ -3,6 +3,7 @@ import { OboroError } from './errors.js';
 import { parseNymUrl } from './nym.js';
 import { parseChallenge, encodePayment } from './protocol.js';
 import { atomicJson, readJson } from './storage.js';
+import { networkFor, resolveChain } from './chain.js';
 
 export type AgentEvent =
   | { type: 'request'; url: string } | { type: 'payment_required'; amountZats: number; payTo: string }
@@ -17,6 +18,7 @@ export interface AgentOptions {
   onEvent?: (event: AgentEvent) => void; allowClearnet?: boolean; settleTimeoutMs?: number; spendFile?: string;
 }
 export function createAgent(options: AgentOptions) {
+  const network = networkFor(resolveChain());
   if (!options.tunnelUrl) throw new OboroError('setup_required', 'Setup required: OBORO_TUNNEL_URL');
   const spendFile = options.spendFile ?? join(process.cwd(), '.oboro', 'agent-spend.json');
   const emit = (event: AgentEvent) => options.onEvent?.(event);
@@ -38,6 +40,7 @@ export function createAgent(options: AgentOptions) {
     if (first.status !== 402) { emit({ type: 'response', status: first.status, mixMs: Number(first.headers.get('x-oboro-mix-ms')) || undefined }); return first; }
     const challenge = parseChallenge(await first.json());
     const accept = challenge.accepts[0];
+    if (accept.network !== network) { emit({ type: 'policy_refused', reason: 'network mismatch' }); throw new OboroError('policy_refused', 'network mismatch', false); }
     if (accept.resource !== new URL(endpoint).pathname.replace(/^\/nym\/[^/]+/, '') && url.startsWith('nym://')) throw new OboroError('invalid_challenge', 'Challenge resource does not match request');
     const amount = Number(accept.maxAmountRequired);
     emit({ type: 'payment_required', amountZats: amount, payTo: accept.payTo });
@@ -51,7 +54,7 @@ export function createAgent(options: AgentOptions) {
     emit({ type: 'paid', txid });
     const deadline = Date.now() + (options.settleTimeoutMs ?? 900_000);
     const headers = new Headers(init.headers);
-    headers.set('X-PAYMENT', encodePayment(txid, accept.extra.nonce));
+    headers.set('X-PAYMENT', encodePayment(txid, accept.extra.nonce, network));
     for (;;) {
       const response = await globalThis.fetch(endpoint, { ...init, headers });
       if (response.status !== 402) {

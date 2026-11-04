@@ -5,20 +5,22 @@ import { repoPath } from './env.js';
 import { BitrefillClient, Guardrails, ShopLedger } from '@oboro/shop';
 import { mountShop } from './shop-routes.js';
 
-const wallet = new ZingoWallet({ dataDir: required('OBORO_SELLER_WALLET_DIR') });
+const chain = process.env.OBORO_CHAIN === 'mainnet' ? 'mainnet' : 'testnet';
+const network = chain === 'mainnet' ? 'zcash-mainnet' : 'zcash-testnet';
+const wallet = new ZingoWallet({ dataDir: required('OBORO_SELLER_WALLET_DIR'), chain });
 const payTo = process.env.OBORO_SELLER_ADDRESS || await wallet.unifiedAddress();
 const viewDir = repoPath(required('OBORO_SELLER_VIEW_DIR'));
 process.env.OBORO_ZINGO_SESSION ??= '0'; // spawn-per-call verifier by default; see README Next 30 days
-const paywall = createPaywall({ payTo, verifier: new ZingoViewVerifier({ dataDir: viewDir }), stateFile: repoPath(process.env.OBORO_PAYWALL_STATE ?? '.oboro/paywall.json'), network: 'zcash-testnet' });
+const paywall = createPaywall({ payTo, verifier: new ZingoViewVerifier({ dataDir: viewDir, chain }), stateFile: repoPath(process.env.OBORO_PAYWALL_STATE ?? '.oboro/paywall.json'), network });
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '8kb' }));
 app.get('/healthz', (_req, res) => res.json({ ok: true, agent: 'Tsuki' }));
-app.get('/v1/intel/tip', paywall.price(2_000, 'Latest Zcash testnet height'), async (_req, res, next) => {
+app.get('/v1/intel/tip', paywall.price(2_000, `Latest Zcash ${chain} height`), async (_req, res, next) => {
   try {
-    const raw = await runZingo(viewDir, 'height');
+    const raw = await runZingo(viewDir, 'height', [], false, undefined, undefined, chain);
     const { height } = JSON.parse(raw) as { height: number };
-    res.json({ agent: 'Tsuki', network: 'zcash-testnet', height, observedAt: new Date().toISOString(), source: 'seller view-only zingo wallet height after payment verification' });
+    res.json({ agent: 'Tsuki', network, height, observedAt: new Date().toISOString(), source: 'seller view-only zingo wallet height after payment verification' });
   } catch (error) { next(error); }
 });
 app.get('/v1/intel/fees', paywall.price(3_000, 'ZIP 317 computed fee table'), (_req, res) => {

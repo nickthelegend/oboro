@@ -29,6 +29,10 @@ const PORT = Number(process.env.OBORO_CONSOLE_PORT ?? 7430);
 const MAX_PER = Number(process.env.OBORO_MAX_PER_REQUEST_ZATS ?? 50_000);
 const DAILY = Number(process.env.OBORO_DAILY_CAP_ZATS ?? 300_000);
 const SPEND_FILE = resolve(repo, process.env.OBORO_SPEND_FILE ?? '.oboro/agent-spend.json');
+const CHAIN = process.env.OBORO_CHAIN ?? 'testnet';
+if (CHAIN !== 'testnet' && CHAIN !== 'mainnet') throw new Error('OBORO_CHAIN must be testnet or mainnet');
+const NETWORK = CHAIN === 'mainnet' ? 'zcash-mainnet' : 'zcash-testnet';
+const EXPLORER = `https://${CHAIN}.zcashexplorer.app/transactions/`;
 
 const CATALOG = [
   { endpoint: 'tip', path: '/v1/intel/tip', priceZats: 2_000, description: 'Latest Zcash testnet height, read by Tsuki' },
@@ -68,7 +72,7 @@ function refreshBalance(force = false) {
   if (balanceCache.pending) return;
   if (!force && balanceCache.at && Date.now() - Date.parse(balanceCache.at) < 60_000) return;
   balanceCache.pending = true;
-  new ZingoWallet({ dataDir: dir })
+  new ZingoWallet({ dataDir: dir, chain: CHAIN })
     .balance()
     .then((zats) => (balanceCache = { zats, at: new Date().toISOString() }))
     .catch((e) => (balanceCache = { error: errMsg(e), at: new Date().toISOString() }));
@@ -132,7 +136,8 @@ app.get('/api/state', async (_req, res) => {
 
   res.json({
     server: 'ok',
-    network: 'zcash-testnet',
+    network: NETWORK,
+    explorerBase: EXPLORER,
     setup,
     tunnel: node(tunnel),
     gate: node(gate),
@@ -202,7 +207,7 @@ app.post('/api/run', async (req, res) => {
   try {
     const agent = createAgent({
       tunnelUrl: TUNNEL,
-      wallet: new ZingoWallet({ dataDir: buyerDir }),
+      wallet: new ZingoWallet({ dataDir: buyerDir, chain: CHAIN }),
       policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [tsuki] },
       spendFile: SPEND_FILE,
       onEvent,
@@ -264,7 +269,7 @@ app.get('/api/shop', async (_req, res) => {
   const shop = await getJson<Record<string, unknown>>(`${SELLER}/oboro/shop`).catch((e) => ({ error: errMsg(e) }));
   const setup: string[] = [];
   // A phone is only needed for top-ups (airtel-india); gift cards need no personal data.
-  res.json({ tsuki: shop, consoleSetup: setup, phoneMasked: maskPhone(process.env.OBORO_SHOP_PHONE), runs: shopRuns.slice(0, 10) });
+  res.json({ network: NETWORK, explorerBase: EXPLORER, tsuki: shop, consoleSetup: setup, phoneMasked: maskPhone(process.env.OBORO_SHOP_PHONE), runs: shopRuns.slice(0, 10) });
 });
 
 // Free catalog read through the mixnet, cached for a minute: the Shop page's live quote before any errand.
@@ -325,7 +330,7 @@ async function runShop(run: ShopRun, tsuki: string, buyerDir: string, productId:
     // 3. Pay Tsuki in shielded ZEC over Nym; the paid POST is the purchase authorisation.
     const agent = createAgent({
       tunnelUrl: TUNNEL,
-      wallet: new ZingoWallet({ dataDir: buyerDir }),
+      wallet: new ZingoWallet({ dataDir: buyerDir, chain: CHAIN }),
       policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [tsuki] },
       spendFile: SPEND_FILE,
       onEvent: (e: AgentEvent) => {

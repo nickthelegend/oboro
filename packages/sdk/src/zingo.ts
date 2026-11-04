@@ -2,15 +2,16 @@ import { spawn } from 'node:child_process';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { OboroError, required } from './errors.js';
-import { ZingoSession, redactZingo } from './session.js';
+import { ZingoSession, redactZingo, zingoGlobalLockPath } from './session.js';
+import { resolveChain, networkFor, addressPrefix, type Chain } from './chain.js';
 
 const PY = `import fcntl,subprocess,sys,os,signal
 os.umask(0o077)
-with open('/tmp/oboro-zingo.lock','a+') as lock:
+with open(sys.argv[1],'a+') as lock:
  fcntl.flock(lock,fcntl.LOCK_EX)
- with open(sys.argv[1],'a+') as wallet_lock:
+ with open(sys.argv[2],'a+') as wallet_lock:
   fcntl.flock(wallet_lock,fcntl.LOCK_EX)
-  p=subprocess.Popen(sys.argv[2:],stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=False)
+  p=subprocess.Popen(sys.argv[3:],stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=False)
   try: out,err=p.communicate()
   except BaseException:
    p.terminate(); p.wait(); raise
@@ -18,12 +19,13 @@ with open('/tmp/oboro-zingo.lock','a+') as lock:
 `;
 const activeGroups = new Set<number>();
 process.once('exit', () => { for (const pid of activeGroups) { try { process.kill(-pid, 'SIGTERM'); } catch { /* already exited */ } } });
-export async function runZingo(dataDir: string, command: string, args: string[] = [], online = false, viewKey?: string, birthday?: number): Promise<string> {
+export async function runZingo(dataDir: string, command: string, args: string[] = [], online = false, viewKey?: string, birthday?: number, chain?: Chain): Promise<string> {
   if (!dataDir) throw new OboroError('setup_required', 'Setup required: OBORO_BUYER_WALLET_DIR');
   const cli = required('OBORO_ZINGO_CLI');
-  const cliArgs = [cli, '--chain', 'testnet', '--data-dir', dataDir, ...(online ? ['--online', '--waitsync'] : ['--offline']), ...(viewKey ? ['--viewkey', viewKey] : []), ...(birthday !== undefined ? ['--birthday', String(birthday)] : []), command, ...args];
+  const server = process.env.OBORO_LIGHTWALLETD;
+  const cliArgs = [cli, '--chain', resolveChain(chain), '--data-dir', dataDir, ...(online ? ['--online', '--waitsync'] : ['--offline']), ...(server ? ['--server', server] : []), ...(viewKey ? ['--viewkey', viewKey] : []), ...(birthday !== undefined ? ['--birthday', String(birthday)] : []), command, ...args];
   return new Promise((resolve, reject) => {
-    const child = spawn('python3', ['-c', PY, ZingoSession.lockPath(dataDir), ...cliArgs], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('python3', ['-c', PY, zingoGlobalLockPath(), ZingoSession.lockPath(dataDir), ...cliArgs], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     if (child.pid) activeGroups.add(child.pid);
     let stdout = ''; let stderr = '';
     child.stdout.on('data', b => { stdout += String(b); });
@@ -45,18 +47,19 @@ export function parseConfirmedBalance(output: string): number {
 }
 export class ZingoWallet {
   readonly dataDir: string;
+  readonly chain: Chain;
   private readonly session?: ZingoSession;
   constructor(options: { dataDir: string; chain?: string }) {
-    if (options.chain && options.chain !== 'testnet') throw new OboroError('network_refused', 'Only testnet is supported');
+    this.chain = resolveChain(options.chain);
     if (!options.dataDir) throw new OboroError('setup_required', 'Setup required: OBORO_BUYER_WALLET_DIR');
     this.dataDir = options.dataDir;
-    if (process.env.OBORO_ZINGO_SESSION === '1') this.session = ZingoSession.forWallet(this.dataDir);
+    if (process.env.OBORO_ZINGO_SESSION === '1') this.session = ZingoSession.forWallet(this.dataDir, this.chain);
   }
   private command(name: string, args: string[] = [], online = false): Promise<string> {
-    return this.session ? this.session.exec(name, args) : runZingo(this.dataDir, name, args, online);
+    return this.session ? this.session.exec(name, args) : runZingo(this.dataDir, name, args, online, undefined, undefined, this.chain);
   }
   async pay(to: string, zats: number, memo: string): Promise<{ txid: string }> {
-    if (!to.startsWith('utest1')) throw new OboroError('network_refused', 'Only Zcash testnet unified addresses are supported');
+    if (!to.startsWith(addressPrefix(networkFor(this.chain)))) throw new OboroError('network_mismatch', 'Recipient address does not match wallet network');
     if (!Number.isSafeInteger(zats) || zats <= 0 || !memo.startsWith('oboro:')) throw new OboroError('invalid_payment', 'Invalid pay arguments');
     if (this.session) await this.session.ensureSynced(20_000);
     return { txid: parseTxid(await this.command('quicksend', [to, String(zats), memo], true)) };
