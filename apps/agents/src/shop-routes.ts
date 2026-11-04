@@ -9,6 +9,8 @@ const problem = (res: Response, error: unknown) => { const e = error instanceof 
 const validId = (value: string) => /^[a-z0-9][a-z0-9-]{0,100}$/i.test(value);
 const validPhone = (value: unknown) => typeof value === 'string' && /^\+[1-9][0-9]{7,14}$/.test(value);
 
+// Products Bitrefill delivers to a phone number (recipient_type phone_number), not as a code.
+export const isTopUp = (id: string) => id === 'airtel-india' || /-bundles(-india)?$|-india-bundles$/.test(id);
 export function mountShop(app: Express, { paywall, client, guardrails, ledger }: Options) {
   // Unmasked redemption data lives only in memory until the buyer retrieves its paid receipt.
   const pending = new Map<string, Pending>();
@@ -24,8 +26,9 @@ export function mountShop(app: Express, { paywall, client, guardrails, ledger }:
   app.post('/v1/shop/buy', paywall.price(5_000, 'Authorise one Bitrefill purchase (paid from event credits)'), asyncRoute(async (req, res) => {
     const body = req.body as Record<string, unknown> | undefined;
     const id = body?.product_id; const value = body?.value; const phone = body?.phone_number;
-    if (typeof id !== 'string' || !validId(id) || !(typeof value === 'string' || typeof value === 'number') || !/^\d+(?:\.\d+)?$/.test(String(value))) throw new ShopError('invalid_purchase', 'product_id and numeric value are required', 400);
-    if (id === 'airtel-india' && !validPhone(phone)) throw new ShopError('invalid_phone', 'Airtel India requires an international phone number', 400);
+    // A value is a number (gift cards) or a named package (phone plans such as Jio bundles); the allow-list decides which.
+    if (typeof id !== 'string' || !validId(id) || !(typeof value === 'string' || typeof value === 'number') || !/^(?:\d+(?:\.\d+)?|[\w .+/–-]{1,80})$/.test(String(value))) throw new ShopError('invalid_purchase', 'product_id and a package value are required', 400);
+    if (isTopUp(id) && !validPhone(phone)) throw new ShopError('invalid_phone', 'Phone top-ups require an international phone number', 400);
     if (phone !== undefined && !validPhone(phone)) throw new ShopError('invalid_phone', 'phone_number must use international format', 400);
     const header = req.get('X-PAYMENT'); if (!header) throw new ShopError('payment_missing', 'X-PAYMENT is required', 402);
     const txid = decodePayment(header).payload.txid;
@@ -38,7 +41,7 @@ export function mountShop(app: Express, { paywall, client, guardrails, ledger }:
     }
     const record = await ledger.reserve({ txid, product_id: id, value, usd: decision.usd, phone_number: typeof phone === 'string' ? phone : undefined, approval: decision.status === 'needs_approval' });
     const start = () => {
-      const promise = fulfil(client, guardrails, ledger, txid, { product_id: id, value: Number(value), phone_number: typeof phone === 'string' ? phone : undefined })
+      const promise = fulfil(client, guardrails, ledger, txid, { product_id: id, value: /^\d+(?:\.\d+)?$/.test(String(value)) ? Number(value) : String(value), phone_number: typeof phone === 'string' ? phone : undefined })
         .then(({ invoice, order }) => ({ invoice_id: invoice.id, order_id: order.id, redemption: order.redemption_info }));
       pending.set(record.receipt_id, { promise, product, value: String(value), usd: decision.usd });
       // Prevent an unhandled rejection when no receipt request is in flight.

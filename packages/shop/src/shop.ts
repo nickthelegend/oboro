@@ -11,7 +11,7 @@ export interface Product { id: string; name: string; in_stock: boolean; currency
 export interface SearchResult { id: string; name: string; in_stock: boolean; currency: string }
 export type Invoice = { id: string; status: string; orders: { id: string; status: string }[] };
 export type Order = { id: string; status: string; redemption_info?: Record<string, unknown> };
-export type InvoiceInput = { products: { product_id: string; quantity: 1; value: number; phone_number?: string }[]; payment_method: 'balance'; auto_pay: true; webhook_url?: string };
+export type InvoiceInput = { products: { product_id: string; quantity: 1; value?: number; package_id?: string; phone_number?: string }[]; payment_method: 'balance'; auto_pay: true; webhook_url?: string };
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => v && typeof v === 'object' && !Array.isArray(v) ? v as Json : {};
 const str = (v: unknown) => typeof v === 'string' ? v : '';
@@ -129,7 +129,9 @@ export function classify(invoice: Invoice, order?: Order): 'poll' | 'delivered' 
   if (order?.status === 'failed' || order?.status === 'refunded') return order.status;
   return order?.status === 'delivered' ? 'delivered' : 'poll';
 }
-export async function fulfil(client: BitrefillClient, guardrails: Guardrails, ledger: ShopLedger, txid: string, input: { product_id: string; value: number; phone_number?: string }, options: { timeoutMs?: number; intervalMs?: number } = {}): Promise<{ invoice: Invoice; order: Order }> {
+// Numeric values go as `value`; a named package (e.g. a Jio plan) goes as Bitrefill's package id `<product><&><name>`.
+const pkgRef = (product_id: string, value: number | string) => typeof value === 'number' ? { value } : { package_id: `${product_id}<&>${value}` };
+export async function fulfil(client: BitrefillClient, guardrails: Guardrails, ledger: ShopLedger, txid: string, input: { product_id: string; value: number | string; phone_number?: string }, options: { timeoutMs?: number; intervalMs?: number } = {}): Promise<{ invoice: Invoice; order: Order }> {
   const existing = await ledger.byTxid(txid);
   if (!existing || !['reserved', 'processing'].includes(existing.status)) throw new ShopError('purchase_not_reserved', 'Purchase must be reserved before invoice creation', 409);
   if (process.env.OBORO_BITREFILL_LIVE_BUY !== '1') throw new ShopError('live_buy_disabled', 'Setup required: OBORO_BITREFILL_LIVE_BUY=1', 503);
@@ -144,7 +146,7 @@ export async function fulfil(client: BitrefillClient, guardrails: Guardrails, le
   const timeout = Date.now() + (options.timeoutMs ?? 300_000);
   let invoice: Invoice;
   if (existing.invoice_id) invoice = await client.getInvoice(existing.invoice_id);
-  else { invoice = await client.createInvoice({ products: [{ product_id: input.product_id, value: input.value, quantity: 1, ...(input.phone_number ? { phone_number: input.phone_number } : {}) }], payment_method: 'balance', auto_pay: true }, INVOICE_PERMIT); await ledger.update(txid, { invoice_id: invoice.id, status: 'processing' }); }
+  else { invoice = await client.createInvoice({ products: [{ product_id: input.product_id, ...pkgRef(input.product_id, input.value), quantity: 1, ...(input.phone_number ? { phone_number: input.phone_number } : {}) }], payment_method: 'balance', auto_pay: true }, INVOICE_PERMIT); await ledger.update(txid, { invoice_id: invoice.id, status: 'processing' }); }
   let expiredRetry = false;
   while (Date.now() < timeout) {
     invoice = await client.getInvoice(invoice.id);
@@ -153,7 +155,7 @@ export async function fulfil(client: BitrefillClient, guardrails: Guardrails, le
       const latest = await client.getProduct(input.product_id, true);
       const retryCheck = guardrails.check(latest, input.value, { usd: Math.max(0, (await ledger.today()).usd - existing.usd), count: Math.max(0, (await ledger.today()).count - 1) });
       if (retryCheck.status === 'refused' || (retryCheck.status === 'needs_approval' && !existing.approved) || retryCheck.usd !== existing.usd) throw new ShopError('retry_guardrails_failed', 'Replacement invoice no longer passes guardrails', 409);
-      expiredRetry = true; invoice = await client.createInvoice({ products: [{ product_id: input.product_id, value: input.value, quantity: 1, ...(input.phone_number ? { phone_number: input.phone_number } : {}) }], payment_method: 'balance', auto_pay: true }, INVOICE_PERMIT); await ledger.update(txid, { invoice_id: invoice.id }); continue;
+      expiredRetry = true; invoice = await client.createInvoice({ products: [{ product_id: input.product_id, ...pkgRef(input.product_id, input.value), quantity: 1, ...(input.phone_number ? { phone_number: input.phone_number } : {}) }], payment_method: 'balance', auto_pay: true }, INVOICE_PERMIT); await ledger.update(txid, { invoice_id: invoice.id }); continue;
     }
     const orderId = invoice.orders?.[0]?.id;
     if (orderId) { await ledger.update(txid, { order_ids: invoice.orders.map(o => o.id) }); const order = await client.getOrder(orderId); const state = classify(invoice, order); if (state === 'delivered') { await ledger.delivered(txid, order); return { invoice, order }; } if (state !== 'poll') { await ledger.update(txid, { status: state }); throw new ShopError(`purchase_${state}`, `Bitrefill purchase ${state}`, 502); } }

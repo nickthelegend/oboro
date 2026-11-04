@@ -296,8 +296,9 @@ export async function launchShopRun(productIdIn: unknown, valueIn: unknown, by: 
   if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return { status: 409, error: 'Kumo is already paying for something' };
   const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
   if (!buyerDir) return { status: 412, error: 'Setup required: OBORO_BUYER_WALLET_DIR' };
-  const phone = productId === 'airtel-india' ? process.env.OBORO_SHOP_PHONE : undefined;
-  if (productId === 'airtel-india' && !phone) return { status: 412, error: 'Setup required: a phone number for the top-up (Setup card)' };
+  const topUp = productId === 'airtel-india' || /-bundles(-india)?$|-india-bundles$/.test(productId);
+  const phone = topUp ? process.env.OBORO_SHOP_PHONE : undefined;
+  if (topUp && !phone) return { status: 412, error: 'Setup required: a phone number for the top-up (Setup card)' };
   const tsuki = await sellerNymAddress();
   if (!tsuki) return { status: 412, error: 'Setup required: Tsuki’s gate is not running (no Nym address)' };
 
