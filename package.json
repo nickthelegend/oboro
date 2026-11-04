@@ -1,0 +1,1 @@
+{"name":"oboro-workspace","private":true,"type":"module","packageManager":"pnpm@10.29.2","scripts":{"test":"pnpm -r test","build":"pnpm -r build","typecheck":"pnpm -r typecheck"},"devDependencies":{"typescript":"^5.9.3","vitest":"^3.2.4","tsx":"^4.20.6","@types/node":"^24.10.0"}}

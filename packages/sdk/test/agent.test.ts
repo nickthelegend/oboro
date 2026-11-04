@@ -1,0 +1,18 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildChallenge, createAgent, OboroError } from '../src/index.js';
+const nonce = 'a'.repeat(32);
+const txid = 'b'.repeat(64);
+const originalFetch = globalThis.fetch;
+afterEach(() => { globalThis.fetch = originalFetch; });
+async function fixture() { const dir = await mkdtemp(join(tmpdir(), 'oboro-agent-')); return { file: join(dir, 'spent.json'), cleanup: () => rm(dir, { recursive: true, force: true }) }; }
+function unpaid() { return new Response(JSON.stringify(buildChallenge('utest1seller', '/v1/tip', 2000, 'tip', nonce)), { status: 402, headers: { 'content-type': 'application/json' } }); }
+describe('agent policy before wallet access', () => {
+  it('rejects recipient outside allow list', async () => { const f = await fixture(); const pay = vi.fn(); globalThis.fetch = vi.fn(async () => unpaid()); const a = createAgent({ tunnelUrl: 'http://127.0.0.1:7410', wallet: { pay }, policy: { maxPerRequestZats: 5000, dailyCapZats: 5000, allowRecipients: ['other'] }, spendFile: f.file }); await expect(a.fetch('nym://seller/v1/tip')).rejects.toMatchObject({ code: 'policy_refused', paid: false }); expect(pay).not.toHaveBeenCalled(); await f.cleanup(); });
+  it('rejects per-request cap', async () => { const f = await fixture(); const pay = vi.fn(); globalThis.fetch = vi.fn(async () => unpaid()); const a = createAgent({ tunnelUrl: 'http://127.0.0.1:7410', wallet: { pay }, policy: { maxPerRequestZats: 1000, dailyCapZats: 5000, allowRecipients: ['seller'] }, spendFile: f.file }); await expect(a.fetch('nym://seller/v1/tip')).rejects.toMatchObject({ code: 'policy_refused', paid: false }); expect(pay).not.toHaveBeenCalled(); await f.cleanup(); });
+  it('rejects daily cap from persisted state', async () => { const f = await fixture(); const pay = vi.fn(); await import('node:fs/promises').then(fs => fs.writeFile(f.file, JSON.stringify({ day: new Date().toISOString().slice(0, 10), total: 4000 }))); globalThis.fetch = vi.fn(async () => unpaid()); const a = createAgent({ tunnelUrl: 'http://127.0.0.1:7410', wallet: { pay }, policy: { maxPerRequestZats: 5000, dailyCapZats: 5000, allowRecipients: ['seller'] }, spendFile: f.file }); await expect(a.fetch('nym://seller/v1/tip')).rejects.toMatchObject({ code: 'policy_refused', paid: false }); expect(pay).not.toHaveBeenCalled(); expect(await a.spentToday()).toBe(4000); await f.cleanup(); });
+  it('refuses HTTPS by default', async () => { const f = await fixture(); const a = createAgent({ tunnelUrl: 'http://127.0.0.1:7410', wallet: { pay: vi.fn() }, policy: { maxPerRequestZats: 5000, dailyCapZats: 5000, allowRecipients: [] }, spendFile: f.file }); await expect(a.fetch('https://example.com')).rejects.toMatchObject({ code: 'clearnet_refused' }); await f.cleanup(); });
+  it('persists a paid amount after a wire-flow simulation', async () => { const f = await fixture(); const pay = vi.fn(async () => ({ txid })); let calls = 0; globalThis.fetch = vi.fn(async () => ++calls === 1 ? unpaid() : new Response('{"ok":true}', { status: 200, headers: { 'X-PAYMENT-RESPONSE': Buffer.from(JSON.stringify({ success: true, txid })).toString('base64') } })); const a = createAgent({ tunnelUrl: 'http://127.0.0.1:7410', wallet: { pay }, policy: { maxPerRequestZats: 5000, dailyCapZats: 5000, allowRecipients: ['seller'] }, spendFile: f.file }); expect((await a.fetch('nym://seller/v1/tip')).status).toBe(200); expect(await a.spentToday()).toBe(2000); expect(JSON.parse(await readFile(f.file, 'utf8')).total).toBe(2000); await f.cleanup(); });
+});
