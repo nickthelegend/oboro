@@ -67,6 +67,12 @@ Tsuki's gate logged each request as `sender: SURB reply tag only (no IP, no Nym 
   Tsuki parks the purchase at 17:03:01, a human presses **Approve** on Tsuki's side at 17:03:21, and Bitrefill delivers:
   invoice **`c0d4eacc-92e9-4d04-a3e0-7413d053d7fc`** (order `6aeb17fdb8b44b12deb0c060`). The agent has no tool that
   approves.
+- *"Instamart doesn't deliver here. Get me a ₹250 Blinkit card instead."* ($2.78; Bitrefill's smallest Blinkit card.)
+  Over the cap again, so Kumo asks first, then pays (shielded txid
+  [`97ae0934…36e8`](https://testnet.zcashexplorer.app/transactions/97ae093437adcc2cbe07198c85cd09632569ff7f7471a1d638a06c534e2036e8)).
+  Tsuki parks it at 20:01:21 and buys nothing until the operator approves; then Bitrefill delivers: invoice
+  **`ab17c7fc-f23e-4c5e-b3f0-76f12f3ae6cd`** (order `6aeb42972380844701a9e3ab`). Blinkit was added to Tsuki's
+  allow-list at ₹250 only.
 
 **The first purchase** (button-driven, before the chat existed):
 
