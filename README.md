@@ -1,8 +1,9 @@
 # Oboro 朧: a private checkout rail for AI agents, over the Nym mixnet, paid in shielded Zcash
 
-**One line:** Oboro lets an AI agent pay for an API call, or buy a real thing on Bitrefill, in shielded Zcash. The
-HTTP request and the payment both cross the Nym mixnet, so the seller, the merchant and anyone watching the chain can't
-tell which agent bought what.
+**One line:** Oboro is a private payment harness for AI agents. An agent pays for an API call, or buys a real thing
+on Bitrefill, in shielded Zcash, and the HTTP request and the payment both cross the Nym mixnet, so the seller, the
+merchant and anyone watching the chain can't tell which agent bought what. You can plug it in as an SDK, an MCP server,
+or a chat agent you just talk to.
 
 `oboro` (TypeScript SDK) · `oboro-node` (Rust, nym-sdk 1.22.3 transport) · `@oboro/shop` (Bitrefill worker) ·
 `@oboro/mcp` (7 MCP tools) · landing, console and shop. Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026.
@@ -47,7 +48,20 @@ purchase and Tsuki pays Bitrefill from its store credits (real money, small). We
 
 Tsuki's gate logged each request as `sender: SURB reply tag only (no IP, no Nym address)`.
 
-## Agentic Commerce: the Bitrefill purchase
+## Agentic Commerce: the Bitrefill purchases
+
+**Talk to Kumo.** The Shop page (`#/shop`) is a chat with Kumo, an LLM agent (Claude Haiku 5.5 via OpenRouter,
+`apps/dashboard/agent.ts`) whose only tools are Oboro's: `shop_rules`, `search_products`, `get_product`, `buy` and
+`check_purchase`, each reaching Tsuki over Nym. Recorded live at 16:27 IST:
+- *"What can you buy me for under a dollar?"* Kumo reads Tsuki's rules and four live Bitrefill prices through the
+  mixnet (2.0 to 4.3 s each) and lists Swiggy, Flipkart, Google Play and Uber at ₹50.
+- *"Get me ₹50 of Google Play credit."* Kumo buys it on its own: shielded payment
+  [`ef3a3c23…1322`](https://testnet.zcashexplorer.app/transactions/ef3a3c239cc3326b051ce27c0f89136a9c67d04673c7a742a40ab6dfc26f1322),
+  Bitrefill invoice **`a2fed34d-06ea-40cb-8670-ff53fa60f843`** (order `6aeb11497073473b2edcfb50`), delivered 16:34:44.
+- *"Also buy me a ₹500 Flipkart card."* Refused **before any payment**: $5.61 is over Tsuki's $1 cap, so only a human
+  could approve it.
+
+**The first purchase** (button-driven, before the chat existed):
 
 - **Real purchase invoice ID:** `6df85b58-7e1d-40a1-975e-e136f9b9e5ed` (order `6aeb0c33273062b3038ebfa5`):
   Swiggy Money India ₹50, $0.55, paid from Tsuki's Bitrefill store credits, order **delivered** at 16:13:02 IST,
@@ -55,8 +69,6 @@ Tsuki's gate logged each request as `sender: SURB reply tag only (no IP, no Nym 
 - **Authorised by** shielded testnet payment
   [`51fe1cefa34634af9c8b68f34c76ae7730aafd5c6996cc220a15ca3fcfb0f68e`](https://testnet.zcashexplorer.app/transactions/51fe1cefa34634af9c8b68f34c76ae7730aafd5c6996cc220a15ca3fcfb0f68e)
   (5,000 zats, Kumo → Tsuki, broadcast over Nym).
-- **Watch it:** Shop page `http://127.0.0.1:7430/#/shop` (Run it below), and the video.
-
 | Time (IST) | Step, as the Shop page recorded it |
 |---|---|
 | 16:07:01 | Kumo browses Tsuki's catalog over Nym (`GET nym://Tsuki/v1/shop/search?q=swiggy`) |
@@ -206,8 +218,14 @@ mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTIN
    - **The light-wallet server** (`testnet.zec.rocks`) sees each wallet's IP and sync timing, because wallet *sync* is
      a direct connection. Transaction *broadcast* goes over Nym (zingo Mixnet Mode). Sync over the mixnet is
      impractically slow today; Nym's dVPN is the fix (see Next 30 days).
-   - **Oboro's state files** hold nonces, txids and the paywall ledger locally. Nothing else is stored.
-3. **Who users must trust.** The seller's operator, to serve what was paid for. The Nym network's mixing, against
+   - **Oboro's state files** hold nonces, txids, the paywall ledger and a masked purchase ledger. Codes are masked
+     to their first and last two characters, and values of 8 characters or fewer are hidden entirely. Gift cards need
+     no phone or email.
+   - **Bitrefill** sees Tsuki's account, the product and its price. It never sees Kumo, Kumo's wallet or Kumo's IP.
+   - **The AI model provider** (OpenRouter, then Anthropic) sees the chat with Kumo, product names, prices and rule
+     checks. It never sees a wallet key, a Bitrefill key, a code or the payment. A local model removes this trust.
+3. **Who users must trust.** The seller's operator, to serve what was paid for, and Tsuki's operator to fulfil
+   purchases from its Bitrefill balance. The model provider, with the chat. The Nym network's mixing, against
    global timing analysis: low traffic makes timing correlation easier. Zingo and lightwalletd, for wallet correctness.
 4. **What we'd fix next.** Move wallet sync onto Nym's 2-hop dVPN. Add Nym cover traffic and timing jitter between the
    payment and the retry. Add multi-seller discovery without a directory that learns who looks up whom.
@@ -223,7 +241,9 @@ mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTIN
 | Rust, tokio, axum, reqwest (rustls) | 1.94.0, 1.54.1, 0.8.9, 0.12 | oboro-node |
 | Node.js, pnpm, TypeScript, Vitest | 26.5.0, 10.29.2, 5.9, 3.2 | SDK, MCP, agents, tests |
 | Express | 5.1 | Tsuki's paywalled API, console server |
-| Model Context Protocol SDK | 1.22 | `@oboro/mcp` |
+| Model Context Protocol SDK | 1.22 | `@oboro/mcp` (7 tools) |
+| Bitrefill REST v2 + `@bitrefill/cli` | v2 · 0.3.0 | `@oboro/shop` worker, no-key catalog |
+| OpenRouter → Claude Haiku 5.5 | `anthropic/claude-haiku-5.5` | Kumo's chat agent (tool calling) |
 | React, Vite | 19.2, 7.2 | landing + console |
 | Urbanist, Space Mono (Google Fonts) | | UI type |
 | ChatGPT image generation | 4 Nov 2026 | brand art (`assets/generated/`) |

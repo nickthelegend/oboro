@@ -312,7 +312,7 @@ function StepItem({ e }: { e: ShopStep }) {
 
 // What each party learns in this setup. Honest, including the one leak we haven't closed (light-wallet sync).
 const PARTIES: { who: string; saw: string; never: string; tone: 'ok' | 'warn' }[] = [
-  { who: 'Bitrefill', saw: 'Tsuki’s account, the product, its $0.55 price', never: 'Kumo, Kumo’s wallet, Kumo’s IP', tone: 'ok' },
+  { who: 'Bitrefill', saw: 'Tsuki’s account, the product and its price', never: 'Kumo, Kumo’s wallet, Kumo’s IP', tone: 'ok' },
   { who: 'Tsuki (seller)', saw: 'The order and the amount, via its viewing key', never: 'Kumo’s IP, Nym address or payer address', tone: 'ok' },
   { who: 'Zcash chain', saw: 'A shielded v6 transaction exists', never: 'Sender, receiver, amount, memo', tone: 'ok' },
   { who: 'Nym mix nodes', saw: 'One hop each: previous and next hop', never: 'Both ends of the route at once', tone: 'ok' },
