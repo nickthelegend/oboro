@@ -1,6 +1,6 @@
 # Oboro node
 
-This workspace has its own `Cargo.lock` and depends on Nym SDK 1.21.4. It has no Zcash dependency. The gate holds a stable Nym identity in `<data>/nym`; the tunnel does the same in its own data directory. The gate's upstream should bind to loopback only.
+This workspace has its own `Cargo.lock` and depends on Nym SDK 1.22.3 (git tag `nym-binaries-v2026.21-hanoi`; not on crates.io yet). It has no Zcash dependency. The gate holds a stable Nym identity in `<data>/nym`; the tunnel does the same in its own data directory. The gate's upstream should bind to loopback only.
 
 ```sh
 cd crates

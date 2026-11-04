@@ -113,8 +113,10 @@ mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTIN
 
 - **Streams, not the deprecated TCP proxy.** `oboro-node` uses nym-sdk's `MixnetStream` (AsyncRead/AsyncWrite),
   one stream per HTTP request, with 4-byte length-prefixed JSON frames, because streams have no close/EOF.
-- **A ready handshake.** nym-sdk 1.21.4 silently drops data that arrives for a stream the receiver hasn't accepted
+- **A ready handshake.** nym-sdk 1.21.4 silently dropped data that arrived for a stream the receiver hadn't accepted
   yet, so the gate sends a ready frame first. Before the fix, 2 of 3 live runs stalled; after it, 3 of 3 passed.
+  We now run nym-sdk 1.22.3 (`nym-binaries-v2026.21-hanoi`), which buffers early data for about 5 s and adds
+  `OpenAck`; we keep the handshake because mixnet delay can exceed that buffer, and there is still no Close frame.
 - **The seller has no public port.** Tsuki's Express app listens on 127.0.0.1; its only door is its Nym address.
   Replies ride SURBs, so the gate never learns the caller's Nym address.
 - **Policy before payment.** The agent checks per-call cap, daily cap, recipient allow-list and challenge expiry
@@ -148,7 +150,7 @@ mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTIN
 
 | Tech | Version | Used for |
 |---|---|---|
-| Nym mixnet, [nym-sdk](https://crates.io/crates/nym-sdk) | 1.21.4 (Nym mainnet) | `MixnetClient` streams, SURB replies |
+| Nym mixnet, [nym-sdk](https://github.com/nymtech/nym/tree/nym-binaries-v2026.21-hanoi/sdk/rust/nym-sdk) | 1.22.3, git tag `nym-binaries-v2026.21-hanoi` (Nym mainnet) | `MixnetClient` streams, SURB replies |
 | Zcash testnet (NU7, Ironwood, v6 tx) | `testnet.zec.rocks` lightwalletd | shielded payments |
 | [zingolib](https://github.com/zingolabs/zingolib) zingo-cli + nym-proxy | commit `0a5cb69` (Zingo CLI 0.1.1, `nym` feature) | wallets, view-only verification, send over Nym |
 | [x402](https://x402.org) | v1 wire format | 402 challenge, `X-PAYMENT`, `X-PAYMENT-RESPONSE` |
