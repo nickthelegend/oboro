@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { explorer, getShop, saveShopSetup, short, startShopRun, zec, type ShopRun, type ShopState, type ShopStep } from './api';
+import { chatKumo, explorer, getShop, saveShopSetup, short, type ChatTurn, type ShopRun, type ShopState, type ShopStep } from './api';
 import { Nav } from './chrome';
 import { useConsole } from './useConsole';
 
@@ -89,30 +89,15 @@ export function Shop() {
   const { shop, offline } = useShop(2000);
   const [selected, setSelected] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const runs = shop?.runs ?? [];
   const run = runs.find((r) => r.id === selected) ?? runs[0];
-  const running = runs.some((r) => r.status === 'running') || (state?.runs ?? []).some((r) => r.status === 'running');
   const tsukiSetup = shop?.tsuki.setup ?? [];
   const setup = [...tsukiSetup, ...(shop?.consoleSetup ?? [])];
   const g = shop?.tsuki.guardrails;
   const today = shop?.tsuki.today;
   const purchases = (shop?.tsuki.ledger ?? []).slice().reverse();
   const quote = useQuote();
-
-  async function go() {
-    setErr(null);
-    setBusy(true);
-    try {
-      const { id } = await startShopRun(ERRAND.product_id, ERRAND.value);
-      setSelected(id);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="page console-page">
@@ -123,10 +108,11 @@ export function Shop() {
             <span className="eyebrow">
               <span className={`dot ${shop ? '' : 'dot-off'}`} /> Shop · Bitrefill · paid in shielded ZEC over Nym
             </span>
-            <h1 className="console-title">Kumo goes shopping.</h1>
+            <h1 className="console-title">Tell Kumo what to buy.</h1>
             <p className="shop-lede">
-              An AI agent with no Bitrefill account, no card and no exposed IP buys a real gift card. Its shielded payment to Tsuki
-              authorises one purchase; Tsuki pays Bitrefill from event credits, inside hard caps, once per payment.
+              Kumo is an AI shopping agent with no Bitrefill account, no card and no exposed IP. Ask in plain words; it finds the
+              item, checks the rules, and pays Tsuki in shielded Zcash over the Nym mixnet. Tsuki buys it on Bitrefill, inside
+              hard caps, once per payment.
             </p>
           </div>
           <div className="node-pills">
@@ -151,39 +137,8 @@ export function Shop() {
         <LoopRail run={run} />
 
         <div className="shop-grid">
-          <section className="agent shop-errand" aria-label="The errand">
-            <h3 className="mini">The errand</h3>
-            <div className="ticket">
-              <div className="ticket-top">
-                <span className="ticket-brand">{ERRAND.brand}</span>
-                <span className="status s-paid">{run?.product ? 'live price' : 'catalog'}</span>
-              </div>
-              <div className="ticket-amount">
-                ₹{ERRAND.value}
-                <span className="fine"> {ERRAND.kind}</span>
-              </div>
-              <dl className="kv">
-                <div>
-                  <dt>Bitrefill price</dt>
-                  <dd className="mono">{run?.product ? `$${run.product.usd.toFixed(2)}` : '$0.55 at last check'}</dd>
-                </div>
-                <div>
-                  <dt>Delivered to</dt>
-                  <dd className="mono">Tsuki’s Bitrefill account</dd>
-                </div>
-                <div>
-                  <dt>Kumo pays Tsuki</dt>
-                  <dd className="mono">5,000 zats, shielded</dd>
-                </div>
-                <div>
-                  <dt>Kumo’s balance</dt>
-                  <dd className="mono">{state?.buyer.balanceZats !== undefined ? `${zec(state.buyer.balanceZats)} TAZ` : '—'}</dd>
-                </div>
-              </dl>
-            </div>
-            <button className="btn btn-moon shop-go" disabled={!shop || running || busy || setup.length > 0} onClick={go}>
-              {running ? 'Kumo is out shopping…' : ERRAND.label}
-            </button>
+          <section className="agent shop-errand" aria-label="Chat with Kumo">
+            <KumoChat disabled={!shop || setup.length > 0} onRun={setSelected} />
             {setup.length > 0 && <p className="fine">Unlocks after setup: {setup.map((x) => SETUP_LABEL[x] ?? x).join(' · ')}</p>}
 
             <h3 className="mini">Guardrails (enforced by Tsuki, in code)</h3>
@@ -278,7 +233,7 @@ function LiveQuote({ quote }: { quote: Quote | null }) {
           </li>
         ))}
       </ul>
-      <p className="fine">No errands yet. Press the button and Kumo browses, pays and buys on its own.</p>
+      <p className="fine">No purchases yet. Ask Kumo for something and it browses, pays and buys on its own.</p>
     </div>
   );
 }
@@ -361,6 +316,7 @@ const PARTIES: { who: string; saw: string; never: string; tone: 'ok' | 'warn' }[
   { who: 'Tsuki (seller)', saw: 'The order and the amount, via its viewing key', never: 'Kumo’s IP, Nym address or payer address', tone: 'ok' },
   { who: 'Zcash chain', saw: 'A shielded v6 transaction exists', never: 'Sender, receiver, amount, memo', tone: 'ok' },
   { who: 'Nym mix nodes', saw: 'One hop each: previous and next hop', never: 'Both ends of the route at once', tone: 'ok' },
+  { who: 'AI model (OpenRouter)', saw: 'Your chat, product names and prices, rule checks', never: 'Keys, codes, wallet, payment, your IP', tone: 'warn' },
   { who: 'Light-wallet server', saw: 'The wallets’ IP and sync timing', never: 'Which payment, or to whom', tone: 'warn' },
 ];
 
@@ -377,7 +333,7 @@ function WhoSaw({ run }: { run?: ShopRun }) {
           </li>
         ))}
       </ul>
-      <p className="fine">The last row is the open leak: compact-block sync talks to the light-wallet server directly. Nym’s 2-hop dVPN closes it.</p>
+      <p className="fine">Amber rows are honest trade-offs: the model sees the conversation (run a local model to remove it), and wallet sync talks to the light-wallet server directly (Nym’s 2-hop dVPN closes it).</p>
     </div>
   );
 }
@@ -440,5 +396,88 @@ function SetupCard({ missing }: { missing: string[] }) {
         {msg && <p className={`banner ${msg.ok ? 'banner-warn' : 'banner-bad'}`}>{msg.text}</p>}
       </div>
     </form>
+  );
+}
+
+const SUGGEST = [
+  'What can you buy me for under a dollar?',
+  'Get me ₹50 of Swiggy credit',
+  'Buy me a ₹500 Flipkart card',
+  'How much have you spent today?',
+];
+
+function KumoChat({ disabled, onRun }: { disabled: boolean; onRun: (id: string) => void }) {
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [sessionId, setSessionId] = useState('');
+  const [text, setText] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const log = useRef<HTMLDivElement>(null);
+  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' }); }, [turns, thinking]);
+
+  async function send(msg: string) {
+    const m = msg.trim();
+    if (!m || thinking) return;
+    setError(null);
+    setText('');
+    setTurns((t) => [...t, { role: 'user', text: m, at: new Date().toISOString() }]);
+    setThinking(true);
+    try {
+      const r = await chatKumo(sessionId, m);
+      setSessionId(r.sessionId);
+      setTurns(r.turns);
+      const last = r.turns[r.turns.length - 1];
+      if (last?.runId) onRun(last.runId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setThinking(false);
+    }
+  }
+
+  return (
+    <div className="chat">
+      <div className="chat-head">
+        <img src="/kumo.jpg" alt="" width={36} height={36} className="portrait" />
+        <div>
+          <div className="chat-name">Kumo</div>
+          <div className="fine">AI shopping agent · tools reach Tsuki over Nym</div>
+        </div>
+      </div>
+      <div className="chat-log" ref={log} aria-live="polite">
+        {turns.length === 0 && (
+          <div className="chat-empty">
+            <p>Ask for something real. Kumo can only spend through Oboro, inside Tsuki’s rules.</p>
+          </div>
+        )}
+        {turns.map((t, i) => (
+          <div key={i} className={`bubble ${t.role}`}>
+            {t.tools && t.tools.length > 0 && (
+              <ul className="tool-trace">
+                {t.tools.map((x, j) => (
+                  <li key={j} className={x.ok ? '' : 'bad'}>
+                    <span className="mono">{x.name}</span>
+                    <span>{x.summary}</span>
+                    {x.mixMs !== undefined && <span className="mono fine">{(x.mixMs / 1000).toFixed(1)} s via Nym</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p>{t.text}</p>
+          </div>
+        ))}
+        {thinking && <div className="bubble assistant thinking"><span /><span /><span /></div>}
+      </div>
+      {error && <p className="banner banner-bad">{error}</p>}
+      <div className="chips">
+        {SUGGEST.map((q) => (
+          <button key={q} className="chip-q" disabled={disabled || thinking} onClick={() => send(q)}>{q}</button>
+        ))}
+      </div>
+      <form className="chat-input" onSubmit={(e) => { e.preventDefault(); void send(text); }}>
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell Kumo what to buy…" disabled={disabled || thinking} aria-label="Message Kumo" maxLength={600} />
+        <button className="btn btn-moon" disabled={disabled || thinking || !text.trim()}>Send</button>
+      </form>
+    </div>
   );
 }

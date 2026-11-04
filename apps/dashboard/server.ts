@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createAgent, ZingoWallet, OboroError, type AgentEvent } from 'oboro';
+import { createKumo } from './agent.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../..');
@@ -239,7 +240,7 @@ type ShopRun = {
   id: string; startedAt: string; finishedAt?: string;
   status: 'running' | 'delivered' | 'processing' | 'needs_approval' | 'refused' | 'failed';
   product?: { id: string; name: string; value: string; currency: string; usd: number };
-  phoneMasked?: string; txid?: string; invoiceId?: string; orderId?: string; receiptId?: string;
+  by?: 'button' | 'agent'; phoneMasked?: string; txid?: string; invoiceId?: string; orderId?: string; receiptId?: string;
   redemptionMasked?: Record<string, string>; steps: ShopStep[]; error?: string;
 };
 const shopRuns: ShopRun[] = [];
@@ -279,21 +280,26 @@ app.get('/api/shop/quote', async (_req, res) => {
   res.json({ ...quoteCache, cached: false });
 });
 
-app.post('/api/shop/run', async (req, res) => {
-  const productId = String(req.body?.product_id ?? 'swiggy-money-india');
-  const value = String(req.body?.value ?? '50');
-  if (!/^[a-z0-9-]{1,100}$/.test(productId) || !/^\d+(\.\d+)?$/.test(value)) return res.status(400).json({ error: 'product_id and value are required' });
-  if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return res.status(409).json({ error: 'Kumo is already paying for something' });
+// Starts one shop errand (button or agent). Returns the run, or an error the caller shows as-is.
+export async function launchShopRun(productIdIn: unknown, valueIn: unknown, by: 'button' | 'agent' = 'button'): Promise<{ run?: ShopRun; status: number; error?: string }> {
+  const productId = String(productIdIn ?? 'swiggy-money-india');
+  const value = String(valueIn ?? '50');
+  if (!/^[a-z0-9-]{1,100}$/.test(productId) || !/^\d+(\.\d+)?$/.test(value)) return { status: 400, error: 'product_id and value are required' };
+  if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return { status: 409, error: 'Kumo is already paying for something' };
   const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
-  if (!buyerDir) return res.status(412).json({ error: 'Setup required: OBORO_BUYER_WALLET_DIR' });
+  if (!buyerDir) return { status: 412, error: 'Setup required: OBORO_BUYER_WALLET_DIR' };
   const phone = productId === 'airtel-india' ? process.env.OBORO_SHOP_PHONE : undefined;
-  if (productId === 'airtel-india' && !phone) return res.status(412).json({ error: 'Setup required: a phone number for the top-up (Setup card)' });
+  if (productId === 'airtel-india' && !phone) return { status: 412, error: 'Setup required: a phone number for the top-up (Setup card)' };
   const tsuki = await sellerNymAddress();
-  if (!tsuki) return res.status(412).json({ error: 'Setup required: Tsuki’s gate is not running (no Nym address)' });
+  if (!tsuki) return { status: 412, error: 'Setup required: Tsuki’s gate is not running (no Nym address)' };
 
-  const run: ShopRun = { id: randomUUID(), startedAt: new Date().toISOString(), status: 'running', phoneMasked: maskPhone(phone), steps: [] };
+  const run: ShopRun = { id: randomUUID(), startedAt: new Date().toISOString(), status: 'running', by, phoneMasked: maskPhone(phone), steps: [] };
   shopRuns.unshift(run);
-  res.json({ id: run.id });
+  void runShop(run, tsuki, buyerDir, productId, value, phone);
+  return { run, status: 200 };
+}
+
+async function runShop(run: ShopRun, tsuki: string, buyerDir: string, productId: string, value: string, phone: string | undefined) {
   const push = (s: Omit<ShopStep, 'ts'>) => run.steps.push({ ts: new Date().toISOString(), ...s });
 
   try {
@@ -371,6 +377,39 @@ app.post('/api/shop/run', async (req, res) => {
   } finally {
     run.finishedAt = new Date().toISOString();
     refreshBalance(true);
+  }
+}
+
+app.post('/api/shop/run', async (req, res) => {
+  const r = await launchShopRun(req.body?.product_id, req.body?.value);
+  if (!r.run) return res.status(r.status).json({ error: r.error });
+  res.json({ id: r.run.id });
+});
+
+
+// Chat with Kumo: an LLM that shops through Oboro's tools (all over Nym). Its only way to spend is launchShopRun.
+const kumo = createKumo({
+  viaNym: async (path) => {
+    const tsuki = await sellerNymAddress();
+    if (!tsuki) throw new Error('Tsuki’s gate is not running');
+    return viaNym(tsuki, path);
+  },
+  launchShopRun: (productId, value) => launchShopRun(productId, value, 'agent'),
+  shopRun: (id) => shopRuns.find((r) => r.id === id),
+  budget: () => ({ balanceZats: balanceCache.zats, spentTodayZats: spentToday(), dailyCapZats: DAILY, maxPerRequestZats: MAX_PER }),
+});
+let chatBusy = false;
+app.post('/api/agent/chat', async (req, res) => {
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+  if (!message) return res.status(400).json({ error: 'Say something to Kumo' });
+  if (chatBusy) return res.status(409).json({ error: 'Kumo is still thinking about the last message' });
+  chatBusy = true;
+  try {
+    res.json(await kumo.chat(String(req.body?.sessionId ?? ''), message));
+  } catch (e) {
+    res.status(502).json({ error: errMsg(e) });
+  } finally {
+    chatBusy = false;
   }
 });
 
