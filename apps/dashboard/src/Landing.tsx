@@ -30,9 +30,13 @@ app.listen(7420, '127.0.0.1');   // no public port: oboro-node gate is the only 
 const MCP_CODE = `{
   "mcpServers": {
     "oboro": {
-      "command": "npx",
-      "args": ["@oboro/mcp"],
-      "env": { "OBORO_TUNNEL_URL": "http://127.0.0.1:7410" }
+      "command": "node",
+      "args": ["packages/mcp/dist/index.js"],
+      "env": {
+        "OBORO_TUNNEL_URL": "http://127.0.0.1:7410",
+        "OBORO_SELLER_NYM_ADDRESS": "<Tsuki's Nym address>",
+        "OBORO_BUYER_WALLET_DIR": "<Kumo's zingo wallet dir>"
+      }
     }
   }
 }
