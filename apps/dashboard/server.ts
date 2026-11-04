@@ -244,6 +244,8 @@ type ShopRun = {
   redemptionMasked?: Record<string, string>; steps: ShopStep[]; error?: string;
 };
 const shopRuns: ShopRun[] = [];
+// Approval ids stay server-side (operator only); the agent never gets a tool that approves.
+const approvals = new Map<string, string>();
 const maskValue = (v: string) => (v.length <= 8 ? '•'.repeat(v.length) : `${v.slice(0, 2)}${'•'.repeat(Math.min(10, v.length - 4))}${v.slice(-2)}`);
 const maskRedemption = (r: unknown): Record<string, string> | undefined => {
   if (!r || typeof r !== 'object') return undefined;
@@ -345,14 +347,22 @@ async function runShop(run: ShopRun, tsuki: string, buyerDir: string, productId:
     let status = buy.status;
     push({ type: 'bitrefill', status, detail: status === 200 ? 'Bitrefill invoice paid from Tsuki’s balance; order delivered' : `Tsuki answered ${status} ${String(body.status ?? body.code ?? '')}` });
 
-    // 4. Long fulfilment: poll the receipt (free, bearer receipt id) until delivered.
-    const deadline = Date.now() + 5 * 60_000;
-    while (status === 202 && body.status === 'processing' && body.receipt_id && Date.now() < deadline) {
-      run.receiptId = String(body.receipt_id);
-      push({ type: 'processing', detail: 'Bitrefill order processing; polling the receipt over Nym' });
+    // 4. Long fulfilment or a parked over-cap purchase: poll the receipt (free, bearer receipt id) over Nym.
+    //    needs_approval waits (up to 30 min) for a human on Tsuki's side; nothing is bought until then.
+    const deadline = Date.now() + 30 * 60_000;
+    while (status === 202 && (body.status === 'processing' || body.status === 'needs_approval') && (body.receipt_id || run.receiptId) && Date.now() < deadline) {
+      run.receiptId = String(body.receipt_id ?? run.receiptId);
+      if (body.status === 'needs_approval') {
+        if (body.approval_id) approvals.set(run.id, String(body.approval_id));
+        if (run.status !== 'needs_approval') { run.status = 'needs_approval'; push({ type: 'needs_approval', detail: 'Above Tsuki’s caps: parked, nothing bought. Waiting for a human on Tsuki’s side to approve.' }); }
+      } else {
+        if (run.status === 'needs_approval') { run.status = 'running'; push({ type: 'approved', detail: 'Approved by Tsuki’s operator; Bitrefill order placed' }); }
+        if (run.steps[run.steps.length - 1]?.type !== 'processing') push({ type: 'processing', detail: 'Bitrefill order processing; polling the receipt over Nym' });
+      }
       await new Promise((r) => setTimeout(r, 5000));
       const r = await viaNym(tsuki, `/v1/shop/receipt/${run.receiptId}`);
       status = r.status; body = r.body;
+      if (status === 200 && run.status === 'needs_approval') { run.status = 'running'; push({ type: 'approved', detail: 'Approved by Tsuki’s operator; Bitrefill order placed' }); }
     }
     if (status === 200 && body.status === 'delivered') {
       run.status = 'delivered';
@@ -410,6 +420,23 @@ app.post('/api/agent/chat', async (req, res) => {
     res.status(502).json({ error: errMsg(e) });
   } finally {
     chatBusy = false;
+  }
+});
+
+// Operator approval for a parked over-cap purchase: a human presses Approve on this machine (local only).
+app.post('/api/operator/approve', async (req, res) => {
+  const ip = req.socket.remoteAddress ?? '';
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return res.status(403).json({ error: 'Operator actions are local only' });
+  const runId = String(req.body?.runId ?? '');
+  const approvalId = approvals.get(runId);
+  if (!approvalId) return res.status(404).json({ error: 'Nothing waiting for approval' });
+  try {
+    const { ShopLedger } = await import('../../packages/shop/dist/index.js');
+    const record = await new ShopLedger(resolve(repo, process.env.OBORO_SHOP_LEDGER ?? '.oboro/shop.json')).approve(approvalId);
+    approvals.delete(runId);
+    res.json({ approved: true, product_id: record.product_id, value: record.value, usd: record.usd });
+  } catch (e) {
+    res.status(409).json({ error: errMsg(e) });
   }
 });
 

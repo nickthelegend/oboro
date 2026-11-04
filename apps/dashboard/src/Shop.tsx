@@ -30,7 +30,8 @@ const STEP_LABEL: Record<string, string> = {
   bitrefill: 'Tsuki placed the Bitrefill order',
   processing: 'Bitrefill is processing',
   delivered: 'Delivered',
-  needs_approval: 'Needs a human',
+  needs_approval: 'Parked: needs a human',
+  approved: 'Approved by Tsuki’s operator',
   error: 'Error',
 };
 
@@ -285,7 +286,31 @@ function ShopRunDetail({ run }: { run: ShopRun }) {
           <span className="mono">{short(run.txid, 18, 10)} ↗</span>
         </a>
       )}
+      {run.status === 'needs_approval' && <ApproveCard runId={run.id} usd={run.product?.usd} />}
       {run.error && <p className="banner banner-bad">{run.error}</p>}
+    </div>
+  );
+}
+
+function ApproveCard({ runId, usd }: { runId: string; usd?: number }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function approve() {
+    setBusy(true);
+    try {
+      const r = await fetch('/api/operator/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runId }) });
+      const b = await r.json().catch(() => ({}));
+      setMsg(r.ok ? 'Approved. Tsuki is placing the Bitrefill order.' : b.error ?? `Refused (${r.status})`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="approve-card">
+      <span className="eyebrow"><span className="dot dot-warn" /> Tsuki’s operator · a human, not the agent</span>
+      <p>Kumo paid and asked for an over-cap purchase{usd !== undefined ? ` ($${usd.toFixed(2)})` : ''}. Nothing is bought until you approve. Kumo has no tool that can do this.</p>
+      <button className="btn btn-moon" disabled={busy || !!msg} onClick={approve}>{busy ? 'Approving…' : 'Approve this purchase'}</button>
+      {msg && <p className="fine">{msg}</p>}
     </div>
   );
 }

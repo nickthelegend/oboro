@@ -22,8 +22,10 @@ How to work:
 - First call shop_rules to learn what Tsuki is allowed to sell and the caps. Use search_products and get_product to find
   real items and prices. Prices are in USD from Bitrefill; values are in the product's currency (₹ for India).
 - Only call buy when the owner clearly asked to buy, the exact product and value are allowed, and it fits the caps.
-  If something isn't allowed or is above the cap, don't try to buy it: say so plainly and offer an allowed option.
-  Above the cap, a human must approve out of band; you can't approve anything yourself.
+  If something isn't sold or is above the cap, don't buy it: say so plainly and offer an allowed option.
+- Above the cap (rule "needs_human_approval"): explain that Tsuki's operator must approve it. Only if the owner then
+  explicitly says to go ahead anyway, call buy with request_approval=true: you pay, Tsuki parks the purchase, and
+  nothing is bought until a human on Tsuki's side approves. You can never approve anything yourself.
 - A purchase takes a few minutes (the payment must be mined). After buy starts it, say that it's running and that
   progress shows in the panel. Use check_purchase if asked how it's going.
 - Codes are cash: you never see them and never ask for them. Never ask for card numbers, passwords or personal data.
@@ -33,7 +35,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'shop_rules', description: "Tsuki's published shop rules: allowed products and values, per-purchase and daily caps, today's totals; plus Kumo's own wallet budget.", parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'search_products', description: "Search Tsuki's Bitrefill catalog (India) over the Nym mixnet.", parameters: { type: 'object', properties: { query: { type: 'string', description: 'e.g. "swiggy", "google play", "uber"' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'get_product', description: 'Live packages and USD prices for one product, each marked allowed / needs_human_approval / not_sold_by_tsuki under the rules.', parameters: { type: 'object', properties: { product_id: { type: 'string' } }, required: ['product_id'] } } },
-  { type: 'function', function: { name: 'buy', description: 'Pay Tsuki in shielded ZEC over Nym to buy one allowed product value. Starts the purchase and returns immediately.', parameters: { type: 'object', properties: { product_id: { type: 'string' }, value: { type: 'string', description: 'package value exactly as listed, e.g. "50"' } }, required: ['product_id', 'value'] } } },
+  { type: 'function', function: { name: 'buy', description: 'Pay Tsuki in shielded ZEC over Nym to buy one allowed product value. Starts the purchase and returns immediately.', parameters: { type: 'object', properties: { product_id: { type: 'string' }, value: { type: 'string', description: 'package value exactly as listed, e.g. "50"' }, request_approval: { type: 'boolean', description: "Only after the owner explicitly confirmed an over-cap purchase: submit it for human approval on Tsuki's side." } }, required: ['product_id', 'value'] } } },
   { type: 'function', function: { name: 'check_purchase', description: 'Status of a purchase started with buy.', parameters: { type: 'object', properties: { run_id: { type: 'string' } }, required: ['run_id'] } } },
 ];
 
@@ -87,10 +89,12 @@ export function createKumo(deps: AgentDeps) {
         if (!p) return { result: { refused: `No ${value} package for ${id}` }, trace: t(`refused: no ${value} package`, false) };
         const v = verdict(rr.rules!, rr.today, id, value, p.usd);
         // Kumo checks the seller's published rules before paying, so a refused purchase never costs a payment.
-        if (v !== 'allowed') return { result: { refused: v, usd: p.usd, note: v === 'needs_human_approval' ? 'Above the cap: nothing paid, nothing bought. A human approves out of band.' : 'Tsuki does not sell this value.' }, trace: t(`${v.replace(/_/g, ' ')} · $${p.usd.toFixed(2)} · nothing paid`, false) };
+        const parked = v === 'needs_human_approval' && args.request_approval === true;
+        if (v !== 'allowed' && !parked) return { result: { refused: v, usd: p.usd, note: v === 'needs_human_approval' ? 'Above the cap: nothing paid, nothing bought. A human approves out of band.' : 'Tsuki does not sell this value.' }, trace: t(`${v.replace(/_/g, ' ')} · $${p.usd.toFixed(2)} · nothing paid`, false) };
         const launched = await deps.launchShopRun(id, value);
         if (!launched.run) return { result: { error: launched.error }, trace: t(launched.error ?? 'could not start', false) };
         turn.runId = launched.run.id;
+        if (parked) return { result: { started: true, run_id: launched.run.id, usd: p.usd, note: 'Over the cap: paying Tsuki 5,000 zats; Tsuki parks it and buys nothing until its human operator approves.' }, trace: t(`submitted for human approval · ${id} ₹${value} · $${p.usd.toFixed(2)}`) };
         return { result: { started: true, run_id: launched.run.id, usd: p.usd, note: 'Paying Tsuki 5,000 zats shielded over Nym; Bitrefill delivers after the block is mined (a few minutes).' }, trace: t(`started · ${id} ₹${value} · $${p.usd.toFixed(2)}`) };
       }
       if (name === 'check_purchase') {
