@@ -79,7 +79,7 @@ export function Console() {
             role="Buyer agent"
             lines={[
               ['Wallet', state?.buyer.ok ? 'Shielded · local spending key' : (state?.buyer.error ?? '—')],
-              ['Balance', state?.buyer.balanceZats !== undefined ? `${zec(state.buyer.balanceZats)} TAZ` : '—'],
+              ['Balance', state?.buyer.balanceZats !== undefined ? `${zec(state.buyer.balanceZats)} ${chainName() === 'mainnet' ? 'ZEC' : 'TAZ'}` : '—'],
               [
                 'Spent today',
                 state?.buyer.spentTodayZats !== undefined

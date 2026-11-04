@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { explorer, getShop, short, zec, type ShopPurchase } from './api';
+import { chainName, explorer, getShop, short, zec, type ShopPurchase } from './api';
 import { Logo, Nav, Footer } from './chrome';
 import { useConsole, useProof } from './useConsole';
 
@@ -215,7 +215,7 @@ export function Landing() {
           <>
             <Stat n={served ?? 0} l="requests Tsuki served over the mixnet" />
             <Stat n={paid.length} l="payments settled in shielded ZEC" />
-            <Stat n={zec(paid.reduce((a, r) => a + r.priceZats, 0))} l="TAZ paid to Tsuki (testnet ZEC)" />
+            <Stat n={zec(paid.reduce((a, r) => a + r.priceZats, 0))} l={chainName() === 'mainnet' ? 'ZEC paid to Tsuki (mainnet)' : 'TAZ paid to Tsuki (testnet ZEC)'} />
             <Stat n={delivered.length} l="real Bitrefill purchases delivered" />
           </>
         ) : (
