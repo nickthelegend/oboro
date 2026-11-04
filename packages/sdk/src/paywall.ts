@@ -50,7 +50,11 @@ export function createPaywall(options: { payTo: string; verifier: Verifier; stat
       n.claimedTxid = txid; n.claimedAt = new Date().toISOString();
       return null;
     });
-    if (check) return denied(check);
+    if (check) {
+      // Record the refusal against the txid, so a ledger never shows a refused payment as pending forever.
+      if (check !== 'nonce_unknown') await transact(s => { s.ledger.push({ ...base, txid, status: check }); });
+      return denied(check);
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     let result: Verification | undefined;
     try {

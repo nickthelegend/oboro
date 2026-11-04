@@ -27,7 +27,7 @@ describe('MCP tool registration', () => {
 
 describe('redemption masking', () => {
   it('retains only two characters at each end and redacts nonstrings', () => {
-    expect(maskRedemption({ code: 'ABCDEFGH', pin: '1234', nested: { secret: 'hidden' } })).toEqual({ code: 'AB****GH', pin: '****', nested: '[redacted]' });
+    expect(maskRedemption({ code: 'ABCDEFGHIJ', pin: '440404', nested: { secret: 'hidden' } })).toEqual({ code: 'AB******IJ', pin: '******', nested: '[redacted]' });
     expect(maskRedemption(undefined)).toBeUndefined();
   });
 });

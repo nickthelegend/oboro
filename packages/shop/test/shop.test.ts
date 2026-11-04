@@ -41,7 +41,7 @@ describe('ledger', () => {
       expect((await readdir(dir)).filter(x => x.includes('.tmp'))).toEqual([]);
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
-  it('masks phones and codes', () => { expect(maskPhone('+919876543210')).toBe('********3210'); expect(maskCode('ABSECRET12CD')).toBe('AB********CD'); });
+  it('masks phones and codes', () => { expect(maskPhone('+919876543210')).toBe('********3210'); expect(maskCode('ABSECRET12CD')).toBe('AB********CD'); expect(maskCode('440404')).toBe('******'); });
 });
 describe('status and retry', () => {
   const invoice = { id: 'i', status: 'complete', orders: [{ id: 'o', status: 'processing' }] };

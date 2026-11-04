@@ -103,7 +103,9 @@ export class Guardrails {
     return { status: 'allowed', usd: pkg.usd };
   }
 }
-export function maskCode(value: string): string { return value.length <= 4 ? '*'.repeat(value.length) : `${value.slice(0, 2)}${'*'.repeat(Math.min(12, value.length - 4))}${value.slice(-2)}`; }
+// Codes are cash. Values of 8 characters or fewer (PINs) are hidden entirely; longer ones keep 2 + 2 so an operator can
+// tell two codes apart without being able to redeem either.
+export function maskCode(value: string): string { return value.length <= 8 ? '*'.repeat(value.length) : `${value.slice(0, 2)}${'*'.repeat(Math.min(12, value.length - 4))}${value.slice(-2)}`; }
 export function maskPhone(value?: string): string | undefined { if (!value) return undefined; const digits = value.replace(/\D/g, ''); return `${'*'.repeat(Math.min(10, Math.max(0, digits.length - 4)))}${digits.slice(-4)}`; }
 export function maskRedemption(input: Record<string, unknown> | undefined): Record<string, unknown> | undefined { if (!input) return undefined; return Object.fromEntries(Object.entries(input).map(([k, v]) => [k, typeof v === 'string' ? maskCode(v) : '[redacted]'])); }
 export interface PurchaseRecord { receipt_id: string; txid: string; status: string; product_id: string; value: string; usd: number; phone_masked?: string; invoice_id?: string; order_ids: string[]; code_masked?: Record<string, unknown>; approval_id?: string; approved?: boolean; created_at: string; updated_at: string }

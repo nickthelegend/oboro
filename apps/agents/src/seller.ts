@@ -8,7 +8,7 @@ import { mountShop } from './shop-routes.js';
 const wallet = new ZingoWallet({ dataDir: required('OBORO_SELLER_WALLET_DIR') });
 const payTo = process.env.OBORO_SELLER_ADDRESS || await wallet.unifiedAddress();
 const viewDir = repoPath(required('OBORO_SELLER_VIEW_DIR'));
-process.env.OBORO_ZINGO_SESSION ??= '1';
+process.env.OBORO_ZINGO_SESSION ??= '0'; // spawn-per-call verifier by default; see README Next 30 days
 const paywall = createPaywall({ payTo, verifier: new ZingoViewVerifier({ dataDir: viewDir }), stateFile: repoPath(process.env.OBORO_PAYWALL_STATE ?? '.oboro/paywall.json'), network: 'zcash-testnet' });
 const app = express();
 app.disable('x-powered-by');

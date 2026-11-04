@@ -243,7 +243,7 @@ type ShopRun = {
   redemptionMasked?: Record<string, string>; steps: ShopStep[]; error?: string;
 };
 const shopRuns: ShopRun[] = [];
-const maskValue = (v: string) => (v.length <= 4 ? '•'.repeat(v.length) : `${v.slice(0, 2)}${'•'.repeat(Math.min(10, v.length - 4))}${v.slice(-2)}`);
+const maskValue = (v: string) => (v.length <= 8 ? '•'.repeat(v.length) : `${v.slice(0, 2)}${'•'.repeat(Math.min(10, v.length - 4))}${v.slice(-2)}`);
 const maskRedemption = (r: unknown): Record<string, string> | undefined => {
   if (!r || typeof r !== 'object') return undefined;
   return Object.fromEntries(Object.entries(r as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => [k, k === 'instructions' ? 'present' : maskValue(String(v))]));

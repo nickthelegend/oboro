@@ -12,7 +12,7 @@ export function maskRedemption(input: unknown): Record<string, string> | undefin
   if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined;
   return Object.fromEntries(Object.entries(input).map(([key, value]) => {
     if (typeof value !== 'string') return [key, '[redacted]'];
-    return [key, value.length <= 4 ? '*'.repeat(value.length) : `${value.slice(0, 2)}${'*'.repeat(Math.min(12, value.length - 4))}${value.slice(-2)}`];
+    return [key, value.length <= 8 ? '*'.repeat(value.length) : `${value.slice(0, 2)}${'*'.repeat(Math.min(12, value.length - 4))}${value.slice(-2)}`];
   }));
 }
 
