@@ -139,6 +139,11 @@ switch (`OBORO_CHAIN=mainnet`; testnet stays the default and mainnet is refused 
   block 3,541,772). Tsuki parks it; after the operator approves, Bitrefill delivers invoice
   **`6ec705e7-5ab5-4c42-8f13-ac7483fa1b39`** (order `6aeb5d5f5376aed24165d2d6`).
 
+- **Phone recharge from chat, no code to redeem:** *"Recharge my Jio number with the 6GB 7-day data pack."* ($0.77, over
+  the day's cap, so human-approved.) Kumo pays ([`5f3e980f…fdb8`](https://blockchair.com/zcash/transaction/5f3e980fc650befbb01336589457c7266d0c9508e6c335809f4286fcc46efdb8)),
+  Tsuki parks it, the operator approves, and Bitrefill tops up the phone directly: invoice **`9665190c-99ef-41b3-8641-73ac57bb9bce`**
+  (order `6aeb6f64f0106a061b7ec21e`). The number is stored masked (`••3648`).
+
 A second recorded x402 call, after a UI label fix: [`a43d037e…7aab`](https://blockchair.com/zcash/transaction/a43d037e644f5820b193968a1d8a1124f0aac43214e324cbd0da15cbf6d77aab), block 3,541,778.
 
 On the explorer each shows only the 0.0001 ZEC fee leaving the shielded pool: no sender, receiver or amount.
