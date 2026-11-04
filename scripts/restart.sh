@@ -10,11 +10,16 @@ case $name in
   gate|tunnel) ;;
   *) echo "Unknown piece: $name (tsuki, console, gate or tunnel)" >&2; exit 2 ;;
 esac
-while IFS= read -r line; do
+load_env() {
+  while IFS= read -r line; do
   [[ "$line" =~ ^([A-Z0-9_]+)=(.*)$ ]] || continue
   value="${BASH_REMATCH[2]%%  #*}"; value="${value%"${value##*[![:space:]]}"}"
   [[ -n "$value" ]] && export "${BASH_REMATCH[1]}=$value"
-done < .env
+  done < "$1"
+}
+load_env .env
+# Optional overlay (e.g. a mainnet env kept outside the repo); its values win over .env.
+[[ -n "${OBORO_ENV_OVERLAY:-}" ]] && load_env "$OBORO_ENV_OVERLAY"
 node_bin="${OBORO_NODE_BIN:-crates/target/release/oboro-node}"
 [[ $name == gate ]] && cmd=("$node_bin" gate --upstream http://127.0.0.1:7420 --data .oboro/gate --status 127.0.0.1:7411)
 [[ $name == tunnel ]] && cmd=("$node_bin" tunnel --listen 127.0.0.1:7410 --data .oboro/tunnel)

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { explorer, short, startRun, zec, type AgentEvent, type ConsoleState, type Run } from './api';
+import { chainName, explorer, short, startRun, zec, type AgentEvent, type ConsoleState, type Run } from './api';
 import { Nav } from './chrome';
 import { useConsole } from './useConsole';
 
@@ -48,7 +48,7 @@ export function Console() {
         <header className="console-head">
           <div>
             <span className="eyebrow">
-              <span className={`dot ${state ? '' : 'dot-off'}`} /> Console · Zcash testnet · Nym mainnet mixnet
+              <span className={`dot ${state ? '' : 'dot-off'}`} /> Console · Zcash {chainName()} · Nym mainnet mixnet
             </span>
             <h1 className="console-title">Kumo pays Tsuki, in the dark.</h1>
           </div>
@@ -245,7 +245,7 @@ function RunDetail({ run }: { run: Run }) {
       </ol>
       {run.txid && (
         <a className="tx-card" href={explorer(run.txid)} target="_blank" rel="noreferrer">
-          <span className="fine">Shielded payment on Zcash testnet{run.height ? ` · block ${run.height}` : ''}</span>
+          <span className="fine">Shielded payment on Zcash {chainName()}{run.height ? ` · block ${run.height}` : ''}</span>
           <span className="mono">{short(run.txid, 18, 10)} ↗</span>
         </a>
       )}

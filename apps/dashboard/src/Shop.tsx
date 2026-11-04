@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { chatKumo, explorer, getShop, saveShopSetup, short, type ChatTurn, type ShopRun, type ShopState, type ShopStep } from './api';
+import { chainName, chatKumo, explorer, getShop, saveShopSetup, short, type ChatTurn, type ShopRun, type ShopState, type ShopStep } from './api';
 import { Nav } from './chrome';
 import { useConsole } from './useConsole';
 
@@ -282,7 +282,7 @@ function ShopRunDetail({ run }: { run: ShopRun }) {
       </ol>
       {run.txid && (
         <a className="tx-card" href={explorer(run.txid)} target="_blank" rel="noreferrer">
-          <span className="fine">Shielded authorisation payment on Zcash testnet</span>
+          <span className="fine">Shielded authorisation payment on Zcash {chainName()}</span>
           <span className="mono">{short(run.txid, 18, 10)} ↗</span>
         </a>
       )}

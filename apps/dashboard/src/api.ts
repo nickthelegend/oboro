@@ -62,7 +62,7 @@ export type LedgerRow = {
 
 export type ConsoleState = {
   server: 'ok';
-  network: 'zcash-testnet';
+  network: 'zcash-testnet' | 'zcash-mainnet';
   setup: string[];
   tunnel: NodeStatus;
   gate: NodeStatus;
@@ -89,7 +89,7 @@ export type ConsoleState = {
 export async function getState(signal?: AbortSignal): Promise<ConsoleState> {
   const res = await fetch('/api/state', { signal });
   if (!res.ok) throw new Error(`console server answered ${res.status}`);
-  return res.json();
+  const s = await res.json(); setNetwork(s.network); return s;
 }
 
 export async function startRun(endpoint: string): Promise<{ id: string }> {
@@ -109,8 +109,12 @@ export const short = (s?: string, a = 8, b = 6) =>
 export const zec = (zats?: number) =>
   zats === undefined ? '—' : (zats / 1e8).toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 8 });
 
+// The console server reports which chain it runs on (OBORO_CHAIN); testnet is the default.
 // testnet.zcashexplorer.app indexes NU7 testnet; Zexplorer's testnet index is stale (see FEEDBACK.md).
-export const explorer = (txid: string) => `https://testnet.zcashexplorer.app/transactions/${txid}`;
+let mainnet = false;
+export function setNetwork(n?: string) { if (n) mainnet = n === 'zcash-mainnet'; }
+export const chainName = () => (mainnet ? 'mainnet' : 'testnet');
+export const explorer = (txid: string) => `https://${mainnet ? 'mainnet' : 'testnet'}.zcashexplorer.app/transactions/${txid}`;
 
 // ───────── Shop (Bitrefill through Tsuki) ─────────
 export type ShopStep = { ts: string; type: string; detail?: string; txid?: string; zats?: number; usd?: number; mixMs?: number; status?: number };
@@ -131,7 +135,7 @@ export type ShopState = {
 export async function getShop(signal?: AbortSignal): Promise<ShopState> {
   const res = await fetch('/api/shop', { signal });
   if (!res.ok) throw new Error(`console server answered ${res.status}`);
-  return res.json();
+  const s = await res.json(); setNetwork(s.network); return s;
 }
 export async function startShopRun(product_id: string, value: string): Promise<{ id: string }> {
   const res = await fetch('/api/shop/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ product_id, value }) });

@@ -5,11 +5,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 umask 077
 [[ -f .env ]] || { echo "Setup required: copy .env.example to .env and fill it in" >&2; exit 1; }
-while IFS= read -r line; do
+load_env() {
+  while IFS= read -r line; do
   [[ "$line" =~ ^([A-Z0-9_]+)=(.*)$ ]] || continue
   value="${BASH_REMATCH[2]%%  #*}"; value="${value%"${value##*[![:space:]]}"}"
   [[ -n "$value" ]] && export "${BASH_REMATCH[1]}=$value"
-done < .env
+  done < "$1"
+}
+load_env .env
+# Optional overlay (e.g. a mainnet env kept outside the repo); its values win over .env.
+[[ -n "${OBORO_ENV_OVERLAY:-}" ]] && load_env "$OBORO_ENV_OVERLAY"
 node_bin="${OBORO_NODE_BIN:-crates/target/release/oboro-node}"
 [[ -x "$node_bin" ]] || { echo "Setup required: build oboro-node (cargo build --release in crates/) or set OBORO_NODE_BIN" >&2; exit 1; }
 mkdir -p .oboro/gate .oboro/tunnel .oboro/logs

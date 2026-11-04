@@ -1,3 +1,4 @@
+import { chainName } from './api';
 export function Logo({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
@@ -42,7 +43,7 @@ export function Nav({ console = false }: { console?: boolean }) {
         </span>
       </a>
       <div className="nav-actions">
-        <span className="net-pill mono">testnet</span>
+        <span className="net-pill mono">{chainName()}</span>
         <a className="nav-shop hide-sm" href="#/shop">
           Shop
         </a>
