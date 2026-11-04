@@ -1,0 +1,11 @@
+node_modules/
+target/
+dist/
+.next/
+.env
+.env.*
+!.env.example
+.oboro/
+*.log
+.DS_Store
+wallets/
