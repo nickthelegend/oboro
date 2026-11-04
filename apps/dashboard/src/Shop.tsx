@@ -4,7 +4,7 @@ import { Nav } from './chrome';
 import { useConsole } from './useConsole';
 
 // The errand Kumo runs. Product and value must be on Tsuki's guardrail allow-list; the price always comes from Bitrefill.
-const ERRAND = { product_id: 'airtel-india', value: '10', label: 'Top up ₹10 Airtel talktime' };
+const ERRAND = { product_id: 'swiggy-money-india', value: '50', label: 'Buy a ₹50 Swiggy Money card', brand: 'Swiggy Money India', kind: 'food and grocery credit' };
 
 // The loop, left to right. Each station lights up from the run's real steps.
 const STATIONS: { key: string; title: string; note: string; done: string[]; live: string[] }[] = [
@@ -12,7 +12,7 @@ const STATIONS: { key: string; title: string; note: string; done: string[]; live
   { key: 'quote', title: 'Quote', note: 'USD price from Bitrefill', done: ['quoted'], live: [] },
   { key: 'pay', title: 'Pay', note: 'Shielded ZEC, over Nym', done: ['settled'], live: ['payment_required', 'policy_ok', 'paying', 'paid', 'pending', 'request'] },
   { key: 'buy', title: 'Buy', note: 'Bitrefill invoice, credits', done: ['bitrefill', 'delivered'], live: ['processing'] },
-  { key: 'deliver', title: 'Delivered', note: 'Value lands on the phone', done: ['delivered'], live: [] },
+  { key: 'deliver', title: 'Delivered', note: 'Code lands, masked', done: ['delivered'], live: [] },
 ];
 
 const STEP_LABEL: Record<string, string> = {
@@ -155,21 +155,21 @@ export function Shop() {
             <h3 className="mini">The errand</h3>
             <div className="ticket">
               <div className="ticket-top">
-                <span className="ticket-brand">Airtel India</span>
+                <span className="ticket-brand">{ERRAND.brand}</span>
                 <span className="status s-paid">{run?.product ? 'live price' : 'catalog'}</span>
               </div>
               <div className="ticket-amount">
                 ₹{ERRAND.value}
-                <span className="fine"> prepaid talktime</span>
+                <span className="fine"> {ERRAND.kind}</span>
               </div>
               <dl className="kv">
                 <div>
                   <dt>Bitrefill price</dt>
-                  <dd className="mono">{run?.product ? `$${run.product.usd.toFixed(2)}` : '$0.11 at last check'}</dd>
+                  <dd className="mono">{run?.product ? `$${run.product.usd.toFixed(2)}` : '$0.55 at last check'}</dd>
                 </div>
                 <div>
-                  <dt>Recipient</dt>
-                  <dd className="mono">{shop?.phoneMasked ?? 'Setup required'}</dd>
+                  <dt>Delivered to</dt>
+                  <dd className="mono">Tsuki’s Bitrefill account</dd>
                 </div>
                 <div>
                   <dt>Kumo pays Tsuki</dt>
@@ -255,7 +255,7 @@ function LiveQuote({ quote }: { quote: Quote | null }) {
   if (!quote) return (
     <div className="quote">
       <h3 className="mini">Tsuki’s catalog · asking through the mixnet…</h3>
-      <p className="empty">Fetching Airtel India from Bitrefill via Nym. This takes a few seconds.</p>
+      <p className="empty">Fetching Swiggy Money India from Bitrefill via Nym. This takes a few seconds.</p>
     </div>
   );
   if (quote.error || !quote.body) return (
@@ -306,12 +306,12 @@ function ShopRunDetail({ run }: { run: ShopRun }) {
     <div className="run-detail">
       <div className="run-top">
         <span className={`status s-${statusClass(run.status)}`}>{run.status.replace('_', ' ')}</span>
-        <span className="mono">{run.product ? `${run.product.name} · ${run.product.value} ${run.product.currency}` : 'airtel-india · 10 INR'}</span>
+        <span className="mono">{run.product ? `${run.product.name} · ${run.product.value} ${run.product.currency}` : `${ERRAND.product_id} · ${ERRAND.value} INR`}</span>
       </div>
       {delivered && (
         <div className="delivered-card">
           <span className="eyebrow">Delivered by Bitrefill</span>
-          <div className="delivered-amount">₹{run.product?.value} → {run.phoneMasked}</div>
+          <div className="delivered-amount">₹{run.product?.value} {run.product?.name ?? ''}{run.phoneMasked ? ` → ${run.phoneMasked}` : ''}</div>
           <dl className="kv">
             <div><dt>Invoice ID</dt><dd className="mono">{run.invoiceId}</dd></div>
             <div><dt>Order ID</dt><dd className="mono">{run.orderId}</dd></div>
@@ -357,8 +357,8 @@ function StepItem({ e }: { e: ShopStep }) {
 
 // What each party learns in this setup. Honest, including the one leak we haven't closed (light-wallet sync).
 const PARTIES: { who: string; saw: string; never: string; tone: 'ok' | 'warn' }[] = [
-  { who: 'Bitrefill', saw: 'Tsuki’s account, the product, the phone number, $0.11', never: 'Kumo, Kumo’s wallet, Kumo’s IP', tone: 'ok' },
-  { who: 'Tsuki (seller)', saw: 'The order, the phone, the amount via its viewing key', never: 'Kumo’s IP, Nym address or payer address', tone: 'ok' },
+  { who: 'Bitrefill', saw: 'Tsuki’s account, the product, its $0.55 price', never: 'Kumo, Kumo’s wallet, Kumo’s IP', tone: 'ok' },
+  { who: 'Tsuki (seller)', saw: 'The order and the amount, via its viewing key', never: 'Kumo’s IP, Nym address or payer address', tone: 'ok' },
   { who: 'Zcash chain', saw: 'A shielded v6 transaction exists', never: 'Sender, receiver, amount, memo', tone: 'ok' },
   { who: 'Nym mix nodes', saw: 'One hop each: previous and next hop', never: 'Both ends of the route at once', tone: 'ok' },
   { who: 'Light-wallet server', saw: 'The wallets’ IP and sync timing', never: 'Which payment, or to whom', tone: 'warn' },

@@ -260,7 +260,7 @@ async function viaNym(tsuki: string, path: string, init: RequestInit = {}) {
 app.get('/api/shop', async (_req, res) => {
   const shop = await getJson<Record<string, unknown>>(`${SELLER}/oboro/shop`).catch((e) => ({ error: errMsg(e) }));
   const setup: string[] = [];
-  if (!process.env.OBORO_SHOP_PHONE) setup.push('OBORO_SHOP_PHONE');
+  // A phone is only needed for top-ups (airtel-india); gift cards need no personal data.
   res.json({ tsuki: shop, consoleSetup: setup, phoneMasked: maskPhone(process.env.OBORO_SHOP_PHONE), runs: shopRuns.slice(0, 10) });
 });
 
@@ -271,7 +271,7 @@ app.get('/api/shop/quote', async (_req, res) => {
   const tsuki = await sellerNymAddress();
   if (!tsuki) return res.status(412).json({ error: 'Setup required: Tsuki’s gate is not running (no Nym address)' });
   try {
-    const q = await viaNym(tsuki, '/v1/shop/product/airtel-india');
+    const q = await viaNym(tsuki, '/v1/shop/product/swiggy-money-india');
     quoteCache = q.status === 200 ? { at: Date.now(), body: q.body, mixMs: q.mixMs } : { at: Date.now(), error: String(q.body.error ?? `HTTP ${q.status}`) };
   } catch (e) {
     quoteCache = { at: Date.now(), error: errMsg(e) };
@@ -280,13 +280,13 @@ app.get('/api/shop/quote', async (_req, res) => {
 });
 
 app.post('/api/shop/run', async (req, res) => {
-  const productId = String(req.body?.product_id ?? 'airtel-india');
-  const value = String(req.body?.value ?? '10');
+  const productId = String(req.body?.product_id ?? 'swiggy-money-india');
+  const value = String(req.body?.value ?? '50');
   if (!/^[a-z0-9-]{1,100}$/.test(productId) || !/^\d+(\.\d+)?$/.test(value)) return res.status(400).json({ error: 'product_id and value are required' });
   if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return res.status(409).json({ error: 'Kumo is already paying for something' });
   const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
   if (!buyerDir) return res.status(412).json({ error: 'Setup required: OBORO_BUYER_WALLET_DIR' });
-  const phone = process.env.OBORO_SHOP_PHONE;
+  const phone = productId === 'airtel-india' ? process.env.OBORO_SHOP_PHONE : undefined;
   if (productId === 'airtel-india' && !phone) return res.status(412).json({ error: 'Setup required: a phone number for the top-up (Setup card)' });
   const tsuki = await sellerNymAddress();
   if (!tsuki) return res.status(412).json({ error: 'Setup required: Tsuki’s gate is not running (no Nym address)' });

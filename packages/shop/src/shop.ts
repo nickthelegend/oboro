@@ -65,7 +65,20 @@ export class BitrefillClient {
   ping() { return this.request('/ping'); }
   balance() { return this.request('/accounts/balance'); }
   searchProducts(q: string, country = 'IN'): Promise<SearchResult[]> { return this.cached(`s:${q}:${country}`, async () => parseSearch(this.key ? await this.request(`/products/search?q=${encodeURIComponent(q)}&country=${encodeURIComponent(country)}`) : await cli(['search-products', '--query', q, '--country', country, '--intent', 'Browse products for a guarded Oboro shop']))); }
-  getProduct(id: string, fresh = false): Promise<Product> { const load = async () => parseProduct(this.key ? await this.request(`/products/${encodeURIComponent(id)}`) : await cli(['get-product-details', '--product_id', id])); return fresh ? load() : this.cached(`p:${id}`, load); }
+  // REST v2 quotes `packages[].price` in the account's primary currency (BTC sats by default). The guardrails need USD,
+  // so the REST path refuses unless the account's primary balance is USD; the no-key CLI path returns payment_price in USD.
+  private accountCurrency(): Promise<string> { return this.cached('acct:currency', async () => str(obj(await this.balance()).currency).toUpperCase()); }
+  getProduct(id: string, fresh = false): Promise<Product> {
+    const load = async () => {
+      if (!this.key) return parseProduct(await cli(['get-product-details', '--product_id', id]));
+      const currency = await this.accountCurrency();
+      if (currency !== 'USD') throw new ShopError('account_currency_not_usd', `Bitrefill quotes prices in the account's primary currency (${currency || 'unknown'}); make USD primary`, 503);
+      const raw = obj(await this.request(`/products/${encodeURIComponent(id)}`));
+      const packages = (Array.isArray(raw.packages) ? raw.packages : []).map((item: unknown) => { const pk = obj(item); return typeof pk.price === 'number' ? { ...pk, usd_price: pk.price } : pk; });
+      return parseProduct({ ...raw, packages });
+    };
+    return fresh ? load() : this.cached(`p:${id}`, load);
+  }
   createInvoice(input: InvoiceInput, permit?: typeof INVOICE_PERMIT): Promise<Invoice> { if (process.env.OBORO_BITREFILL_LIVE_BUY !== '1') throw new ShopError('live_buy_disabled', 'Setup required: OBORO_BITREFILL_LIVE_BUY=1', 503); if (permit !== INVOICE_PERMIT) throw new ShopError('guardrails_not_checked', 'Invoice creation requires an approved, reserved purchase', 403); return this.request('/invoices', { method: 'POST', body: JSON.stringify(input) }) as Promise<Invoice>; }
   getInvoice(id: string): Promise<Invoice> { return this.request(`/invoices/${encodeURIComponent(id)}`) as Promise<Invoice>; }
   getOrder(id: string): Promise<Order> { return this.request(`/orders/${encodeURIComponent(id)}`) as Promise<Order>; }
