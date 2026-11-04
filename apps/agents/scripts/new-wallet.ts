@@ -15,7 +15,7 @@ await mkdir(dir, { mode: 0o700 });
 await chmod(dir, 0o700);
 // A new zingo wallet is created on first use. Never forward its startup output.
 try {
-  await runZingo(dir, 'height', [], true, undefined, undefined, chain);
+  await runZingo(dir, 'info', [], true, undefined, undefined, chain);
   if (!(await stat(join(dir, 'zingo-wallet.dat'))).isFile()) throw new Error('Wallet file was not created');
   const wallet = new ZingoWallet({ dataDir: dir, chain });
   const address = await wallet.unifiedAddress();

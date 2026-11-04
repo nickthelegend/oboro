@@ -23,7 +23,7 @@ export async function runZingo(dataDir: string, command: string, args: string[] 
   if (!dataDir) throw new OboroError('setup_required', 'Setup required: OBORO_BUYER_WALLET_DIR');
   const cli = required('OBORO_ZINGO_CLI');
   const server = process.env.OBORO_LIGHTWALLETD;
-  const cliArgs = [cli, '--chain', resolveChain(chain), '--data-dir', dataDir, ...(online ? ['--online', '--waitsync'] : ['--offline']), ...(server ? ['--server', server] : []), ...(viewKey ? ['--viewkey', viewKey] : []), ...(birthday !== undefined ? ['--birthday', String(birthday)] : []), command, ...args];
+  const cliArgs = [cli, '--chain', resolveChain(chain), '--data-dir', dataDir, ...(online ? ['--online', '--waitsync'] : ['--offline']), ...(server && online ? ['--server', server] : []), ...(viewKey ? ['--viewkey', viewKey] : []), ...(birthday !== undefined ? ['--birthday', String(birthday)] : []), command, ...args];
   return new Promise((resolve, reject) => {
     const child = spawn('python3', ['-c', PY, zingoGlobalLockPath(), ZingoSession.lockPath(dataDir), ...cliArgs], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     if (child.pid) activeGroups.add(child.pid);
