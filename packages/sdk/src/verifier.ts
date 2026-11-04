@@ -3,6 +3,7 @@ import { runZingo } from './zingo.js';
 import { TXID } from './protocol.js';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ZingoSession } from './session.js';
 
 export interface Verification { found: boolean; valueZats: number; memo: string; height: number; confirmations: number }
 interface Transfer { txid: string; kind: string; value: number; memos: string[]; blockheight: number; status: string; pools_received: string[] }
@@ -14,9 +15,12 @@ export function parseTransfers(output: string): Transfer[] {
 export class ZingoViewVerifier {
   private lastSync = 0;
   private syncTask?: Promise<void>;
-  constructor(readonly options: { dataDir: string; chain?: string }) {
+  private readonly session?: ZingoSession;
+  constructor(readonly options: { dataDir: string; chain?: string; minConfirmations?: number }) {
     if (options.chain && options.chain !== 'testnet') throw new OboroError('network_refused', 'Only testnet is supported');
     if (!options.dataDir) throw new OboroError('setup_required', 'Setup required: OBORO_SELLER_VIEW_DIR');
+    if (options.minConfirmations !== undefined && (!Number.isSafeInteger(options.minConfirmations) || options.minConfirmations < 1)) throw new OboroError('invalid_confirmations', 'minConfirmations must be a positive integer');
+    if (process.env.OBORO_ZINGO_SESSION === '1') this.session = ZingoSession.forWallet(options.dataDir);
   }
   private async sync(): Promise<void> {
     if (Date.now() - this.lastSync < 15_000) return;
@@ -25,6 +29,10 @@ export class ZingoViewVerifier {
   }
   async find(txid: string, nonce: string, minZats: number): Promise<Verification> {
     if (!TXID.test(txid)) throw new OboroError('invalid_txid', 'Invalid txid');
+    if (this.session) {
+      const height = await this.session.ensureSynced(20_000);
+      return this.readTransfer(txid, nonce, height);
+    }
     // A prior online scan may have saved a confirmed note before its CLI session timed out.
     // Reuse only a recent wallet snapshot with at least three confirmations.
     const modified = await stat(join(this.options.dataDir, 'zingo-wallet.dat')).then(s => s.mtimeMs, () => 0);
@@ -35,14 +43,14 @@ export class ZingoViewVerifier {
     await this.sync();
     return this.readTransfer(txid, nonce);
   }
-  private async readTransfer(txid: string, nonce: string): Promise<Verification> {
-    const [messages, heightText] = await Promise.all([runZingo(this.options.dataDir, 'messages'), runZingo(this.options.dataDir, 'height')]);
+  private async readTransfer(txid: string, nonce: string, syncedHeight?: number): Promise<Verification> {
+    const [messages, heightText] = await Promise.all([this.session ? this.session.exec('messages') : runZingo(this.options.dataDir, 'messages'), syncedHeight === undefined ? runZingo(this.options.dataDir, 'height') : Promise.resolve(JSON.stringify({ height: syncedHeight }))]);
     const chainHeight = (JSON.parse(heightText) as {height: number}).height;
     const candidates = parseTransfers(messages).filter(t => t.txid.toLowerCase() === txid.toLowerCase() && t.kind === 'received' && t.pools_received?.some(p => p === 'Ironwood' || p === 'Orchard'));
     const expectedMemo = `oboro:${nonce}`;
     const match = candidates.find(t => t.memos?.includes(expectedMemo)) ?? candidates[0];
     if (!match) return { found: false, valueZats: 0, memo: '', height: 0, confirmations: 0 };
     const confirmations = match.status === 'confirmed' && match.blockheight > 0 ? Math.max(0, chainHeight - match.blockheight + 1) : 0;
-    return { found: true, valueZats: Number(match.value), memo: match.memos?.includes(expectedMemo) ? expectedMemo : (match.memos?.[0] ?? ''), height: match.blockheight, confirmations };
+    return { found: !this.session || confirmations >= (this.options.minConfirmations ?? 1), valueZats: Number(match.value), memo: match.memos?.includes(expectedMemo) ? expectedMemo : (match.memos?.[0] ?? ''), height: match.blockheight, confirmations };
   }
 }

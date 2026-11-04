@@ -3,6 +3,8 @@ export type { AgentEvent, AgentOptions } from './agent.js';
 export { createPaywall } from './paywall.js';
 export type { LedgerEntry, PaywallRequest, PaywallDecision } from './paywall.js';
 export { ZingoWallet, parseTxid, parseConfirmedBalance, runZingo } from './zingo.js';
+export { ZingoSession, InteractiveFramer, redactZingo } from './session.js';
+export type { InteractiveFrame } from './session.js';
 export { ZingoViewVerifier, parseTransfers } from './verifier.js';
 export type { Verification } from './verifier.js';
 export { parseNymUrl } from './nym.js';

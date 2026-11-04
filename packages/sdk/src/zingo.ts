@@ -2,35 +2,35 @@ import { spawn } from 'node:child_process';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { OboroError, required } from './errors.js';
+import { ZingoSession, redactZingo } from './session.js';
 
 const PY = `import fcntl,subprocess,sys,os,signal
 os.umask(0o077)
 with open('/tmp/oboro-zingo.lock','a+') as lock:
  fcntl.flock(lock,fcntl.LOCK_EX)
- p=subprocess.Popen(sys.argv[1:],stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=False)
- try: out,err=p.communicate()
- except BaseException:
-  p.terminate(); p.wait(); raise
- sys.stdout.buffer.write(out); sys.stderr.buffer.write(err); sys.exit(p.returncode)
+ with open(sys.argv[1],'a+') as wallet_lock:
+  fcntl.flock(wallet_lock,fcntl.LOCK_EX)
+  p=subprocess.Popen(sys.argv[2:],stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=False)
+  try: out,err=p.communicate()
+  except BaseException:
+   p.terminate(); p.wait(); raise
+  sys.stdout.buffer.write(out); sys.stderr.buffer.write(err); sys.exit(p.returncode)
 `;
 const activeGroups = new Set<number>();
 process.once('exit', () => { for (const pid of activeGroups) { try { process.kill(-pid, 'SIGTERM'); } catch { /* already exited */ } } });
-function redact(s: string): string {
-  return s.replace(/(?:\b[a-z]+\s+){23}[a-z]+\b/gi, '[REDACTED_SEED]').replace(/(?:ufvk|uview)[a-z0-9]{20,}/gi, '[REDACTED_KEY]').replace(/(?:u1|utest1|zs1|ztestsapling1)[a-z0-9]{30,}/gi, '[REDACTED_ADDRESS]');
-}
 export async function runZingo(dataDir: string, command: string, args: string[] = [], online = false, viewKey?: string, birthday?: number): Promise<string> {
   if (!dataDir) throw new OboroError('setup_required', 'Setup required: OBORO_BUYER_WALLET_DIR');
   const cli = required('OBORO_ZINGO_CLI');
   const cliArgs = [cli, '--chain', 'testnet', '--data-dir', dataDir, ...(online ? ['--online', '--waitsync'] : ['--offline']), ...(viewKey ? ['--viewkey', viewKey] : []), ...(birthday !== undefined ? ['--birthday', String(birthday)] : []), command, ...args];
   return new Promise((resolve, reject) => {
-    const child = spawn('python3', ['-c', PY, ...cliArgs], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('python3', ['-c', PY, ZingoSession.lockPath(dataDir), ...cliArgs], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     if (child.pid) activeGroups.add(child.pid);
     let stdout = ''; let stderr = '';
     child.stdout.on('data', b => { stdout += String(b); });
     child.stderr.on('data', b => { stderr = (stderr + String(b)).slice(-8192); });
     const timeout = setTimeout(() => { if (child.pid) { try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already exited */ } } }, online ? 300_000 : 60_000);
     child.on('error', e => { clearTimeout(timeout); if (child.pid) activeGroups.delete(child.pid); reject(e); });
-    child.on('close', code => { clearTimeout(timeout); if (child.pid) activeGroups.delete(child.pid); code === 0 ? resolve(stdout) : reject(new OboroError('zingo_failed', `zingo ${command} failed (${code}): ${redact(stderr.slice(-1200))}`)); });
+    child.on('close', code => { clearTimeout(timeout); if (child.pid) activeGroups.delete(child.pid); code === 0 ? resolve(stdout) : reject(new OboroError('zingo_failed', `zingo ${command} failed (${code}): ${redactZingo(stderr.slice(-1200))}`)); });
   });
 }
 export function parseTxid(output: string): string {
@@ -45,21 +45,27 @@ export function parseConfirmedBalance(output: string): number {
 }
 export class ZingoWallet {
   readonly dataDir: string;
+  private readonly session?: ZingoSession;
   constructor(options: { dataDir: string; chain?: string }) {
     if (options.chain && options.chain !== 'testnet') throw new OboroError('network_refused', 'Only testnet is supported');
     if (!options.dataDir) throw new OboroError('setup_required', 'Setup required: OBORO_BUYER_WALLET_DIR');
     this.dataDir = options.dataDir;
+    if (process.env.OBORO_ZINGO_SESSION === '1') this.session = ZingoSession.forWallet(this.dataDir);
+  }
+  private command(name: string, args: string[] = [], online = false): Promise<string> {
+    return this.session ? this.session.exec(name, args) : runZingo(this.dataDir, name, args, online);
   }
   async pay(to: string, zats: number, memo: string): Promise<{ txid: string }> {
     if (!to.startsWith('utest1')) throw new OboroError('network_refused', 'Only Zcash testnet unified addresses are supported');
     if (!Number.isSafeInteger(zats) || zats <= 0 || !memo.startsWith('oboro:')) throw new OboroError('invalid_payment', 'Invalid pay arguments');
-    return { txid: parseTxid(await runZingo(this.dataDir, 'quicksend', [to, String(zats), memo], true)) };
+    if (this.session) await this.session.ensureSynced(20_000);
+    return { txid: parseTxid(await this.command('quicksend', [to, String(zats), memo], true)) };
   }
-  async balance(): Promise<number> { return parseConfirmedBalance(await runZingo(this.dataDir, 'balance')); }
-  async height(): Promise<number> { const v = JSON.parse(await runZingo(this.dataDir, 'height')) as { height: number }; return v.height; }
-  async unifiedAddress(): Promise<string> { const v = JSON.parse(await runZingo(this.dataDir, 'addresses')) as { encoded_address: string }[]; if (!v[0]?.encoded_address) throw new OboroError('address_missing', 'No unified address in wallet'); return v[0].encoded_address; }
+  async balance(): Promise<number> { if (this.session) await this.session.ensureSynced(20_000); return parseConfirmedBalance(await this.command('balance')); }
+  async height(): Promise<number> { if (this.session) await this.session.ensureSynced(20_000); const v = JSON.parse(await this.command('height')) as { height: number }; return v.height; }
+  async unifiedAddress(): Promise<string> { const v = JSON.parse(await this.command('addresses')) as { encoded_address: string }[]; if (!v[0]?.encoded_address) throw new OboroError('address_missing', 'No unified address in wallet'); return v[0].encoded_address; }
   async exportViewingKeyToFile(path: string): Promise<void> {
-    const raw = (await runZingo(this.dataDir, 'export_ufvk')).trim();
+    const raw = (await this.command('export_ufvk')).trim();
     const key = raw.match(/(?:uview|ufvk)[a-z0-9]+/i)?.[0];
     if (!key) throw new OboroError('viewkey_missing', 'zingo did not return a viewing key');
     await mkdir(dirname(path), { recursive: true });

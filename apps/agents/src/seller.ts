@@ -3,9 +3,11 @@ import express from 'express';
 import { createPaywall, required, runZingo, ZingoViewVerifier, ZingoWallet } from 'oboro';
 import { repoPath } from './env.js';
 
+
 const wallet = new ZingoWallet({ dataDir: required('OBORO_SELLER_WALLET_DIR') });
 const payTo = process.env.OBORO_SELLER_ADDRESS || await wallet.unifiedAddress();
 const viewDir = repoPath(required('OBORO_SELLER_VIEW_DIR'));
+process.env.OBORO_ZINGO_SESSION ??= '1';
 const paywall = createPaywall({ payTo, verifier: new ZingoViewVerifier({ dataDir: viewDir }), stateFile: repoPath(process.env.OBORO_PAYWALL_STATE ?? '.oboro/paywall.json'), network: 'zcash-testnet' });
 const app = express();
 app.disable('x-powered-by');

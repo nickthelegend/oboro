@@ -23,6 +23,9 @@ importers:
 
   apps/agents:
     dependencies:
+      '@oboro/shop':
+        specifier: workspace:*
+        version: link:../../packages/shop
       dotenv:
         specifier: ^17.2.3
         version: 17.4.2
@@ -87,6 +90,8 @@ importers:
         version: 3.25.76
 
   packages/sdk: {}
+
+  packages/shop: {}
 
 packages:
 
