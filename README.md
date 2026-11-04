@@ -32,7 +32,7 @@ purchase and Tsuki pays Bitrefill from its store credits (real money, small). We
   (at 12:00 IST Zexplorer's testnet index was stuck at block 4,505,665, so use the zcashexplorer link until it catches up).
 - Earlier paid runs: [`a9bf5c18…`](https://testnet.zcashexplorer.app/transactions/a9bf5c18c117ce18fc48677dd5d409261d6cc243ac0a43254dfcaebfceedd3d7) (tip, block 4,581,123) and
   [`a2ea9e36…`](https://testnet.zcashexplorer.app/transactions/a2ea9e368d8dad312500153aa0a167bd30e04d82045b709b11d9c83e01045a96) (fees, block 4,581,154).
-- Video: _link_
+- Video (2:00, every demo step live; sped-up stretches are badged): https://drive.google.com/file/d/1-5q5g_xgUI2B0xRAM7f8vLF4jKVrdiKA/view
 - Console and landing run locally (the agents, the Nym clients and the wallets live on the operator's machine): see Run it.
 
 ### Live run, as the console recorded it (4 Nov 2026, IST)
