@@ -32,7 +32,7 @@ purchase and Tsuki pays Bitrefill from its store credits (real money, small). We
   (at 12:00 IST Zexplorer's testnet index was stuck at block 4,505,665, so use the zcashexplorer link until it catches up).
 - Earlier paid runs: [`a9bf5c18…`](https://testnet.zcashexplorer.app/transactions/a9bf5c18c117ce18fc48677dd5d409261d6cc243ac0a43254dfcaebfceedd3d7) (tip, block 4,581,123) and
   [`a2ea9e36…`](https://testnet.zcashexplorer.app/transactions/a2ea9e368d8dad312500153aa0a167bd30e04d82045b709b11d9c83e01045a96) (fees, block 4,581,154).
-- Video (2:00, every demo step live; sped-up stretches are badged): https://drive.google.com/file/d/1-5q5g_xgUI2B0xRAM7f8vLF4jKVrdiKA/view
+- Video (1:59, every demo step live; sped-up stretches are badged): https://drive.google.com/file/d/1s3gzBqAsQmjiZa-PXmar27n-cBwqReiP/view
 - Console and landing run locally (the agents, the Nym clients and the wallets live on the operator's machine): see Run it.
 
 ### Live run, as the console recorded it (4 Nov 2026, IST)
@@ -147,7 +147,7 @@ switch (`OBORO_CHAIN=mainnet`; testnet stays the default and mainnet is refused 
 A second recorded x402 call, after a UI label fix: [`a43d037e…7aab`](https://blockchair.com/zcash/transaction/a43d037e644f5820b193968a1d8a1124f0aac43214e324cbd0da15cbf6d77aab), block 3,541,778.
 
 On the explorer each shows only the 0.0001 ZEC fee leaving the shielded pool: no sender, receiver or amount.
-Mainnet film (1:24, all live, sped-up stretches badged): https://drive.google.com/file/d/1iWeAIstYepoMEPvI_iJkwUJGsk4Rrld7/view
+Mainnet film (1:52, all live, sped-up stretches badged; API call, Swiggy, Blinkit, Jio recharge and the Jio SMS): https://drive.google.com/file/d/1jSkJzlmZg2nRI3frlHKefkCJE2J5jwJq/view
 To run it: put the mainnet wallet dirs and state paths in an env file outside the repo and start with
 `OBORO_ENV_OVERLAY=<that file> scripts/up.sh` (see `MAINNET_MODE_RESULT.md` for the variables).
 
