@@ -122,6 +122,22 @@ Bitrefill's catalog, invoices and delivery, unchanged.
 - **Codes are cash:** redemption values are never logged or stored unmasked; the ledger, console and MCP results show
   the first 2 and last 2 characters only.
 
+## Also on Zcash mainnet (outside the hackathon scope)
+
+The submission and the film are testnet, as the rules ask. The same code also runs on mainnet behind an explicit
+switch (`OBORO_CHAIN=mainnet`; testnet stays the default and mainnet is refused unless that variable is set). On
+4 Nov 2026, from Kumo's own mainnet wallet funded with 0.01 ZEC, over the same Nym mixnet:
+- **x402 API call:** Kumo paid Tsuki 2,000 zats, shielded, verified with Tsuki's viewing key:
+  [`5d6048d6…dd8c2`](https://blockchair.com/zcash/transaction/5d6048d636fb870f8ad16f8665240c9d3a4c6696373546fa7741d920655dd8c2),
+  block 3,541,707.
+- **Bitrefill purchase from chat:** *"Get me ₹50 of Swiggy credit"*: Kumo paid 5,000 zats
+  ([`51e91b35…0c69`](https://blockchair.com/zcash/transaction/51e91b3520333a842b44c4e7bcc6ec85d3956e3fe3017e634b0aa3ab79d80c69),
+  block 3,541,714) and Bitrefill delivered invoice **`01c3fbf9-db34-4b70-869e-348078a70054`** (order `6aeb4e71390889e2b66a5af7`).
+
+On the explorer each shows only the 0.0001 ZEC fee leaving the shielded pool: no sender, receiver or amount.
+To run it: put the mainnet wallet dirs and state paths in an env file outside the repo and start with
+`OBORO_ENV_OVERLAY=<that file> scripts/up.sh` (see `MAINNET_MODE_RESULT.md` for the variables).
+
 ## Who it's for and the problem
 
 AI agents are starting to pay for the APIs they call ([x402](https://x402.org): `402 Payment Required` → pay → retry
@@ -186,7 +202,7 @@ Headless instead of the console: `pnpm --filter @oboro/agents buyer --once <Tsuk
 MCP: point any MCP client at `node packages/mcp/dist/index.js` with `OBORO_TUNNEL_URL`, `OBORO_SELLER_NYM_ADDRESS` and
 `OBORO_BUYER_WALLET_DIR` set; tools `oboro_fetch`, `oboro_budget`, `oboro_status`.
 
-Tests: `pnpm -r test` (45 SDK, 21 shop, 2 MCP, 1 agents unit tests), `cargo test --manifest-path crates/Cargo.toml` (6 unit tests),
+Tests: `pnpm -r test` (52 SDK, 21 shop, 2 MCP, 1 agents unit tests), `cargo test --manifest-path crates/Cargo.toml` (6 unit tests),
 live mixnet round trip `cargo test --manifest-path crates/Cargo.toml --test live_roundtrip -- --ignored` (real Nym
 mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTING.md), [crates/RESULT.md](crates/RESULT.md).
 
