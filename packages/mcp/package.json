@@ -1,0 +1,1 @@
+{"name":"@oboro/mcp","version":"0.1.0","type":"module","bin":{"oboro-mcp":"./dist/index.js"},"scripts":{"build":"tsc -p tsconfig.json","typecheck":"tsc --noEmit -p tsconfig.json","test":"vitest run"},"dependencies":{"oboro":"workspace:*","@modelcontextprotocol/sdk":"^1.22.0","zod":"^3.25.0"}}
