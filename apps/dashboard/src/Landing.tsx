@@ -85,7 +85,7 @@ const FAQ = [
   },
   {
     q: 'What does it not hide?',
-    a: 'The seller sees the amount it was paid and what was asked for. A global observer with very little other traffic could still try timing analysis; Nym’s cover traffic and mixing delays are what push back on that. Payments wait for one block (about 75 s on testnet).',
+    a: 'The seller sees the amount it was paid and what was asked for. A global observer with very little other traffic could still try timing analysis; Nym’s cover traffic and mixing delays are what push back on that. Payments wait for one block (about 25 s on NU7 testnet) plus the seller’s viewing-key sync.',
   },
   {
     q: 'Is this production ready?',

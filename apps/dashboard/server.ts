@@ -188,7 +188,7 @@ app.post('/api/run', async (req, res) => {
         return push({ ts, type: 'paid', txid: e.txid, detail: `txid ${e.txid.slice(0, 16)}…` });
       case 'pending':
         if (run.events[run.events.length - 1]?.type === 'pending') return;
-        return push({ ts, type: 'pending', detail: 'Tsuki answers 402 payment_pending until the note is mined (~75 s blocks)' });
+        return push({ ts, type: 'pending', detail: 'Tsuki answers 402 payment_pending until its viewing key sees the mined note (NU7 testnet blocks ≈ 25 s)' });
       case 'settled':
         return push({ ts, type: 'settled', detail: 'Memo, amount and nonce checked with a viewing key' });
       case 'response':
