@@ -97,6 +97,21 @@ const FAQ = [
   },
 ];
 
+
+const SHOP_FLOW = [
+  { t: 'Browse, through the mixnet', d: 'Kumo reads Tsuki’s catalog over Nym. Tsuki fetches it from Bitrefill: real products, real stock, real USD prices.' },
+  { t: 'Pay in the dark', d: 'Tsuki answers 402. Kumo checks its own spend policy, then pays 5,000 zats in shielded testnet ZEC, broadcast over Nym.' },
+  { t: 'Buy inside the caps', d: 'Tsuki verifies the note with a viewing key, reserves the txid, then creates a Bitrefill invoice paid from its balance.' },
+  { t: 'Delivered, not just paid', d: 'Tsuki polls the invoice and the order until Bitrefill says delivered. The value lands on the phone; any code comes back masked.' },
+];
+const GUARANTEES: [string, string][] = [
+  ['Allow-list', 'Only listed products and values'],
+  ['Caps', '$0.50 per purchase, $1.50 and 3 buys per day'],
+  ['Above the cap', 'Nothing is bought; a human approves out of band'],
+  ['Replay', 'One purchase per Zcash txid, reserved before the invoice'],
+  ['Codes', 'Never logged; masked everywhere but the buyer’s paid response'],
+];
+
 export function Landing() {
   const { state, offline } = useConsole(4000);
   const proof = useProof();
@@ -126,14 +141,15 @@ export function Landing() {
           </h1>
           <p className="lede">
             Oboro carries an AI agent’s HTTP request and its Zcash payment through the Nym mixnet. The seller gets paid
-            and serves the call, without learning who called, from where, or which wallet paid.
+            and serves the call, or buys a real top-up on Bitrefill, without learning who called, from where, or which
+            wallet paid.
           </p>
           <div className="ctas">
             <a className="btn btn-moon" href="#/console">
               Open the console <span aria-hidden="true">→</span>
             </a>
-            <a className="btn btn-ghost" href="#sdk">
-              Read the SDK
+            <a className="btn btn-ghost" href="#/shop">
+              Send Kumo shopping
             </a>
           </div>
         </div>
@@ -254,6 +270,46 @@ export function Landing() {
             </li>
           ))}
         </ol>
+      </section>
+
+
+      <section className="section" id="shop">
+        <div className="section-head">
+          <span className="eyebrow">Shopping superpower · Bitrefill</span>
+          <h2>It buys real things, too.</h2>
+          <p className="section-lede">
+            The same rail pays for goods. Kumo, with no Bitrefill account, no card and no exposed IP, pays Tsuki in shielded
+            ZEC over Nym. That payment authorises one real Bitrefill purchase, which Tsuki pays from its balance inside
+            hard caps. Bitrefill delivers; nobody upstream learns which agent asked.
+          </p>
+        </div>
+        <div className="shop-promo">
+          <ol className="shop-flow">
+            {SHOP_FLOW.map((f, i) => (
+              <li key={f.t}>
+                <span className="mono step-n">{String(i + 1).padStart(2, '0')}</span>
+                <div>
+                  <h3>{f.t}</h3>
+                  <p>{f.d}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="shop-guarantees glass">
+            <div className="glass-head">Guarantees, in code</div>
+            <ul>
+              {GUARANTEES.map(([k, v]) => (
+                <li key={k}>
+                  <span className="moon">{k}</span>
+                  <span>{v}</span>
+                </li>
+              ))}
+            </ul>
+            <a className="btn btn-moon" href="#/shop">
+              Open the shop <span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </div>
       </section>
 
       <section className="section" id="sdk">

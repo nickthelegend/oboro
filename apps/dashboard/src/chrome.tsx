@@ -24,6 +24,9 @@ export function Nav({ console = false }: { console?: boolean }) {
         <a href="#how" className="hide-sm">
           How it works
         </a>
+        <a href="#shop" className="hide-sm">
+          Shop
+        </a>
         <a href="#sdk" className="hide-sm">
           SDK
         </a>
@@ -66,7 +69,7 @@ export function Footer() {
             <Logo size={40} />
             <span>Oboro</span>
           </div>
-          <p className="footer-line">x402 over the Nym mixnet, paid in shielded Zcash.</p>
+          <p className="footer-line">x402 and agent shopping over the Nym mixnet, paid in shielded Zcash.</p>
         </div>
         <div className="footer-cols">
           <div>
@@ -86,6 +89,9 @@ export function Footer() {
             </a>
             <a href="https://x402.org" target="_blank" rel="noreferrer">
               x402
+            </a>
+            <a href="https://www.bitrefill.com" target="_blank" rel="noreferrer">
+              Bitrefill
             </a>
           </div>
         </div>
