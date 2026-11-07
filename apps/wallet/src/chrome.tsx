@@ -35,9 +35,9 @@ export function Nav({ active = 'overview' }: { active?: NavTab }) {
           朧
         </span>
       </a>
-      <div className="seg nav-seg" role="list">
+      <div className="seg nav-seg">
         {TABS.map(([key, href, label]) => (
-          <a key={key} role="listitem" href={href} className={`seg-item ${active === key ? 'on' : ''}`} aria-current={active === key ? 'page' : undefined}>
+          <a key={key} href={href} className={`seg-item ${active === key ? 'on' : ''}`} aria-current={active === key ? 'page' : undefined}>
             {key === 'examples' ? (
               <>
                 Example<span className="hide-xs">&nbsp;agent</span>
