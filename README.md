@@ -63,6 +63,17 @@ purchase and the gateway pays Bitrefill from its store credits (real money, smal
 
 ## Demo
 
+### Infrastructure film (8 Nov 2026, filmed live)
+
+Film (2:34; link added when uploaded). Opens on the landing hero, then the layers, the SDK, the examples, and one live
+run of the example shopping agent; sped-up stretches are badged.
+- **Over-limit purchase by the example agent:** *"Buy me ₹250 of Swiggy credit for groceries."* ($2.77, over the
+  merchant's $1 purchase limit.) The agent asks first; after *"Yes, go ahead."* the wallet pays
+  [`7258e99d…5fa3`](https://testnet.zcashexplorer.app/transactions/7258e99d305bf711c10da75721f266f449d142426367bb645416661d41d25fa3)
+  (5,000 zats, shielded, over Nym), the gateway verifies it with its viewing key and parks the purchase, a person
+  approves it in the wallet app (22:33:32 UTC), and the Bitrefill connector delivers invoice
+  **`b43ae428-8fa3-45ad-a26c-150eaf0b3631`** (order `6aefa7364af62a4d94fa94d4`).
+
 ### Wallet film (7 Nov 2026, filmed live)
 
 Film: `videos/oboro-wallet-film.mp4` (2:47; link added when uploaded). Every demo step ran live on camera, and sped-up stretches are badged.
