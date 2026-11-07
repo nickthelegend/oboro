@@ -131,7 +131,7 @@ export function Console() {
           <AgentPanel
             who="gateway"
             name="Merchant gateway"
-            role="Seller agent · no public port"
+            role="Merchant · oboro gateway · no public port"
             lines={[
               ['Nym address', short(state?.gate.nymAddress, 10, 8)],
               ['Pay-to (shielded)', short(state?.gateway.payTo, 10, 6)],
