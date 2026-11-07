@@ -1,6 +1,9 @@
 export { createAgent } from './agent.js';
 export type { AgentEvent, AgentOptions } from './agent.js';
+export { createWallet } from './wallet.js';
+export type { WalletBudget, ApprovalResult, MerchantBuyResult, MerchantReceiptResult, MerchantRules, MerchantSearch, MerchantProduct, MerchantBuyInput } from './wallet.js';
 export { createPaywall } from './paywall.js';
+export { createGateway } from './gateway.js';
 export type { LedgerEntry, PaywallRequest, PaywallDecision } from './paywall.js';
 export { ZingoWallet, parseTxid, parseConfirmedBalance, runZingo } from './zingo.js';
 export { ZingoSession, InteractiveFramer, redactZingo } from './session.js';

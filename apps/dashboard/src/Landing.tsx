@@ -3,29 +3,34 @@ import { chainName, explorer, getShop, short, zec, type ShopPurchase } from './a
 import { Logo, Nav, Footer } from './chrome';
 import { useConsole, useProof } from './useConsole';
 
-const AGENT_CODE = `import { createAgent, ZingoWallet } from 'oboro';
+const AGENT_CODE = `import { createWallet, ZingoWallet } from 'oboro';
 
-const kumo = createAgent({
-  tunnelUrl: 'http://127.0.0.1:7410',        // local oboro-node tunnel
-  wallet: new ZingoWallet({ dataDir: process.env.KUMO_WALLET! }),
-  policy: { maxPerRequestZats: 50_000, dailyCapZats: 300_000 },
+const wallet = createWallet({
+  tunnelUrl: 'http://127.0.0.1:7410',        // local oboro-node tunnel into Nym
+  wallet: new ZingoWallet({ dataDir: process.env.OBORO_BUYER_WALLET_DIR! }),
+  policy: { maxPerRequestZats: 50_000, dailyCapZats: 300_000, allowRecipients: [MERCHANT] },
 });
 
-// 402 -> policy -> shielded payment -> retry, all over the mixnet
-const res = await kumo.fetch(\`nym://\${TSUKI}/v1/intel/tip\`);`;
+// Pay an x402 API: 402 -> policy -> shielded payment -> retry, all over the mixnet
+const tip = await wallet.fetch(\`nym://\${MERCHANT}/v1/intel/tip\`);
+
+// Buy a real thing through the merchant's commerce connector
+const order = await wallet.merchant(MERCHANT).buy({ product_id: 'swiggy-money-india', value: 50 });
+if (order.status === 'needs_approval') notifyHuman(order.approval_id); // over budget: a human decides`;
 
 const SELLER_CODE = `import express from 'express';
-import { createPaywall, ZingoViewVerifier } from 'oboro';
+import { createGateway, ZingoViewVerifier } from 'oboro';
 
-const paywall = createPaywall({
-  payTo: process.env.TSUKI_ADDRESS!,            // shielded unified address
-  verifier: new ZingoViewVerifier({ dataDir: '.oboro/view' }), // viewing key only
+const gateway = createGateway({
+  payTo: process.env.OBORO_SELLER_ADDRESS!,      // shielded unified address
+  verifier: new ZingoViewVerifier({ dataDir: '.oboro/view' }), // viewing key only, can't spend
   stateFile: '.oboro/paywall.json',
+  network: 'zcash-testnet',
 });
 
 const app = express();
-app.get('/v1/intel/tip', paywall.price(2_000, 'Live testnet tip'), tip);
-app.listen(7420, '127.0.0.1');   // no public port: oboro-node gate is the only door`;
+app.get('/v1/intel/tip', gateway.price(2_000, 'Live testnet tip'), tip);
+app.listen(7420, '127.0.0.1');   // no public port: the oboro-node gate is the only door`;
 
 const MCP_CODE = `{
   "mcpServers": {
@@ -34,14 +39,39 @@ const MCP_CODE = `{
       "args": ["packages/mcp/dist/index.js"],
       "env": {
         "OBORO_TUNNEL_URL": "http://127.0.0.1:7410",
-        "OBORO_SELLER_NYM_ADDRESS": "<Tsuki's Nym address>",
-        "OBORO_BUYER_WALLET_DIR": "<Kumo's zingo wallet dir>"
+        "OBORO_SELLER_NYM_ADDRESS": "<merchant's Nym address>",
+        "OBORO_BUYER_WALLET_DIR": "<your agent's zingo wallet dir>"
       }
     }
   }
 }
-// tools: oboro_fetch · oboro_budget · oboro_status
+// tools: oboro_fetch · oboro_budget · oboro_wallet_budget · oboro_status
 //        oboro_shop_search · oboro_shop_product · oboro_shop_buy · oboro_shop_receipt`;
+
+const LAYERS = [
+  {
+    k: 'Infrastructure',
+    t: 'The SDK developers build on',
+    items: [
+      ['createWallet()', 'x402 fetch over Nym, spend policy, budget, merchant(addr).buy()'],
+      ['createGateway()', 'Accept private agent payments; verify with a viewing key, no public port'],
+      ['Commerce connectors', 'bitrefillConnector(): recharges, gift cards, top-ups, with caps'],
+      ['@oboro/mcp', 'Any MCP model gets the wallet as tools'],
+      ['oboro-node', 'Rust Nym transport: tunnel for agents, gate for merchants'],
+    ],
+  },
+  {
+    k: 'Wallet app',
+    t: 'Where a human stays in charge',
+    items: [
+      ['Talk to your agent', 'Ask in plain words; it pays and buys from its own wallet'],
+      ['Budget', 'Per-payment and daily caps, allowed payees'],
+      ['Approvals', 'Over budget, nothing is bought until you approve'],
+      ['Activity', 'Every payment and order, codes masked'],
+      ['Who saw what', 'A privacy receipt per purchase'],
+    ],
+  },
+];
 
 const LEAKS = [
   { row: 'Who paid whom, on chain', plain: 'Public', shielded: 'Hidden', oboro: 'Hidden' },
@@ -56,22 +86,22 @@ const STEPS = [
   {
     n: '01',
     t: 'The call crosses the mist',
-    d: 'Kumo asks Tsuki for data. oboro-node wraps the HTTP request in Sphinx packets and sends it through the Nym entry gateway and three mix layers to Tsuki’s Nym address. Tsuki has no public port at all.',
+    d: 'Your agent calls a paid API. oboro-node wraps the HTTP request in Sphinx packets and sends it through the Nym entry gateway and three mix layers to the merchant’s Nym address. The merchant has no public port at all.',
   },
   {
     n: '02',
     t: '402, answered on a reply-only path',
-    d: 'Tsuki answers 402 Payment Required with an x402 challenge: price in zatoshis, a shielded address and a one-time nonce. The answer rides single-use reply blocks, so Tsuki never learns where Kumo is.',
+    d: 'The gateway answers 402 Payment Required with an x402 challenge: price in zatoshis, a shielded address and a one-time nonce. The answer rides single-use reply blocks, so the merchant never learns where the agent is.',
   },
   {
     n: '03',
     t: 'Paid in shielded Zcash',
-    d: 'Kumo checks its spend policy, then pays the exact price to Tsuki’s shielded address with the nonce in the encrypted memo. The wallet broadcasts it over Nym too.',
+    d: 'The wallet checks its spend policy, then pays the exact price to the merchant’s shielded address with the nonce in the encrypted memo. It broadcasts over Nym too.',
   },
   {
     n: '04',
     t: 'Proof, verified with a viewing key',
-    d: 'Kumo retries with X-PAYMENT. Tsuki’s server holds only a viewing key: it finds the note, checks memo and amount, redeems the nonce once and serves 200.',
+    d: 'The wallet retries with X-PAYMENT. The gateway holds only a viewing key: it finds the note, checks memo and amount, redeems the nonce once and serves 200.',
   },
 ];
 
@@ -100,10 +130,10 @@ const FAQ = [
 
 
 const SHOP_FLOW = [
-  { t: 'Browse, through the mixnet', d: 'Kumo reads Tsuki’s catalog over Nym. Tsuki fetches it from Bitrefill: real products, real stock, real USD prices.' },
-  { t: 'Pay in the dark', d: 'Tsuki answers 402. Kumo checks its own spend policy, then pays 5,000 zats in shielded testnet ZEC, broadcast over Nym.' },
-  { t: 'Buy inside the caps', d: 'Tsuki verifies the note with a viewing key, reserves the txid, then creates a Bitrefill invoice paid from its balance.' },
-  { t: 'Delivered, not just paid', d: 'Tsuki polls the invoice and the order until Bitrefill says delivered. The code lands in Tsuki’s Bitrefill account; the buyer’s copy comes back only in its paid response, masked everywhere else.' },
+  { t: 'Browse, through the mixnet', d: 'The agent reads the merchant’s catalog over Nym. The Bitrefill connector answers with real products, stock and USD prices.' },
+  { t: 'Pay in the dark', d: 'The gateway answers 402. The wallet checks its budget, then pays in shielded ZEC, broadcast over Nym.' },
+  { t: 'Buy inside the caps', d: 'The gateway verifies the note with a viewing key, reserves the txid, and the connector places the order inside the merchant’s caps.' },
+  { t: 'Delivered, not just paid', d: 'The connector polls until Bitrefill says delivered. A recharge lands on the phone; a code comes back only in the paid response, masked everywhere else.' },
 ];
 const GUARANTEES: [string, string][] = [
   ['Allow-list', 'Only listed products and values'],
@@ -117,7 +147,7 @@ function usePurchases(): ShopPurchase[] {
   const [rows, setRows] = useState<ShopPurchase[]>([]);
   useEffect(() => {
     let alive = true;
-    const tick = () => getShop().then((s) => alive && setRows(s.tsuki.ledger ?? [])).catch(() => undefined);
+    const tick = () => getShop().then((s) => alive && setRows(s.gateway.ledger ?? [])).catch(() => undefined);
     tick();
     const t = window.setInterval(tick, 5000);
     return () => { alive = false; window.clearInterval(t); };
@@ -130,7 +160,7 @@ export function Landing() {
   const proof = useProof();
   const [tab, setTab] = useState<'agent' | 'seller' | 'mcp'>('agent');
 
-  const paid = state?.seller.ledger.filter((r) => r.status === 'paid') ?? [];
+  const paid = state?.gateway.ledger.filter((r) => r.status === 'paid') ?? [];
   const lastPaid = paid[paid.length - 1];
   const lastRun = state?.runs.find((r) => r.status === 'paid');
   const served = state?.gate.served;
@@ -148,24 +178,24 @@ export function Landing() {
         <div className="hero-shade" aria-hidden="true" />
         <div className="hero-copy">
           <span className="eyebrow">
-            <span className="dot" /> x402 · Nym mixnet · shielded Zcash
+            <span className="dot" /> Private wallet SDK · x402 · Nym · shielded Zcash
           </span>
           <h1>
-            Agents pay
+            A private wallet
             <br />
-            in the dark.
+            for AI agents.
           </h1>
           <p className="lede">
-            Oboro carries an AI agent’s HTTP request and its Zcash payment through the Nym mixnet. The seller gets paid
-            and serves the call, or buys a real gift card on Bitrefill, without learning who called, from where, or which
-            wallet paid.
+            Give your agent a wallet that pays APIs and buys real things, like phone recharges and grocery credit, in
+            shielded Zcash. Every request and payment crosses the Nym mixnet, so no merchant learns who asked, from where,
+            or which wallet paid. Anything over budget waits for you.
           </p>
           <div className="ctas">
-            <a className="btn btn-moon" href="#/console">
-              Open the console <span aria-hidden="true">→</span>
+            <a className="btn btn-moon" href="#/shop">
+              Open the wallet <span aria-hidden="true">→</span>
             </a>
-            <a className="btn btn-ghost" href="#/shop">
-              Send Kumo shopping
+            <a className="btn btn-ghost" href="#sdk">
+              Read the SDK
             </a>
           </div>
         </div>
@@ -174,7 +204,7 @@ export function Landing() {
           <div className="glass card-saw">
             <div className="glass-head">
               <span className="chip">{state ? 'Live' : recorded ? 'Recorded run' : 'Offline'}</span>
-              What Tsuki, the seller, saw
+              What the merchant saw
             </div>
             <dl className="saw">
               <dt>Client IP</dt>
@@ -213,9 +243,9 @@ export function Landing() {
       <section className="stats" aria-label="Live counts">
         {state ? (
           <>
-            <Stat n={served ?? 0} l="requests Tsuki served over the mixnet" />
+            <Stat n={served ?? 0} l="paid requests served over the mixnet" />
             <Stat n={paid.length} l="payments settled in shielded ZEC" />
-            <Stat n={zec(paid.reduce((a, r) => a + r.priceZats, 0))} l={chainName() === 'mainnet' ? 'ZEC paid to Tsuki (mainnet)' : 'TAZ paid to Tsuki (testnet ZEC)'} />
+            <Stat n={zec(paid.reduce((a, r) => a + r.priceZats, 0))} l={chainName() === 'mainnet' ? 'ZEC paid by agent wallets (mainnet)' : 'TAZ paid by agent wallets (testnet ZEC)'} />
             <Stat n={delivered.length} l="real Bitrefill purchases delivered" />
           </>
         ) : (
@@ -226,6 +256,34 @@ export function Landing() {
             </a>
           </p>
         )}
+      </section>
+
+      <section className="section" id="layers">
+        <div className="section-head">
+          <span className="eyebrow">Two layers</span>
+          <h2>Infrastructure for developers. A wallet for people.</h2>
+          <p className="sub">
+            Developers plug the SDK, the gateway or the MCP server into any agent or store. The people whose agents spend
+            get one wallet app to set the budget, approve what’s over it and see who saw what.
+          </p>
+        </div>
+        <div className="layers">
+          {LAYERS.map((l) => (
+            <div className="glass layer" key={l.k}>
+              <div className="glass-head">
+                <span className="chip">{l.k}</span> {l.t}
+              </div>
+              <ul>
+                {l.items.map(([name, what]) => (
+                  <li key={name}>
+                    <span className={l.k === 'Infrastructure' ? 'mono moon' : 'moon'}>{name}</span>
+                    <span>{what}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="section" id="why">
@@ -266,13 +324,13 @@ export function Landing() {
       <section className="section" id="how">
         <div className="section-head">
           <span className="eyebrow">How a paid call travels</span>
-          <h2>Five veils between the agents.</h2>
+          <h2>Five veils between your agent and the merchant.</h2>
         </div>
         <figure className="veil-figure frame">
           <img src="/veils.jpg" alt="A packet of light weaving through five veils of mist toward the moon" />
           <figcaption className="veil-labels" aria-hidden="true">
-            <span>Kumo</span>
-            {['Entry gateway', 'Mix layer 1', 'Mix layer 2', 'Mix layer 3', 'Tsuki’s gateway'].map((v) => (
+            <span>Your agent</span>
+            {['Entry gateway', 'Mix layer 1', 'Mix layer 2', 'Mix layer 3', 'Merchant’s gateway'].map((v) => (
               <span key={v}>{v}</span>
             ))}
           </figcaption>
@@ -292,12 +350,12 @@ export function Landing() {
 
       <section className="section" id="shop">
         <div className="section-head">
-          <span className="eyebrow">Shopping superpower · Bitrefill</span>
+          <span className="eyebrow">Commerce connectors · Bitrefill first</span>
           <h2>It buys real things, too.</h2>
           <p className="section-lede">
-            The same rail pays for goods. Kumo, with no Bitrefill account, no card and no exposed IP, pays Tsuki in shielded
-            ZEC over Nym. That payment authorises one real Bitrefill purchase, which Tsuki pays from its balance inside
-            hard caps. Bitrefill delivers; nobody upstream learns which agent asked.
+            The same wallet pays for goods. Your agent needs no Bitrefill account, no card and no exposed IP: it pays the
+            merchant in shielded ZEC over Nym, and that payment authorises one real order, placed by the merchant’s
+            connector inside hard caps. Bitrefill delivers; nobody upstream learns which agent asked.
           </p>
         </div>
         <div className="shop-promo">
@@ -323,7 +381,7 @@ export function Landing() {
               ))}
             </ul>
             <a className="btn btn-moon" href="#/shop">
-              Open the shop <span aria-hidden="true">→</span>
+              Open the wallet <span aria-hidden="true">→</span>
             </a>
           </div>
           <div className="glass last-buy">
@@ -334,7 +392,7 @@ export function Landing() {
               <dl className="saw">
                 <dt>Product</dt>
                 <dd className="moon">{lastBuy.product_id} · ₹{lastBuy.value}</dd>
-                <dt>Paid by Tsuki</dt>
+                <dt>Paid by the merchant</dt>
                 <dd>${lastBuy.usd.toFixed(2)} store credit</dd>
                 <dt>Bitrefill invoice</dt>
                 <dd className="mono">{short(lastBuy.invoice_id, 8, 4)}</dd>
@@ -350,19 +408,20 @@ export function Landing() {
 
       <section className="section" id="sdk">
         <div className="section-head">
-          <span className="eyebrow">Pluggable SDK</span>
-          <h2>Ten lines on each side.</h2>
+          <span className="eyebrow">Wallet SDK</span>
+          <h2>One import on each side.</h2>
           <p className="sub">
-            Agents get a <code>fetch</code> that speaks x402 over Nym. Sellers get an Express paywall that verifies with a
-            viewing key. Any MCP-capable model gets seven tools, shopping included.
+            Agents get <code>createWallet()</code>: a <code>fetch</code> that pays x402 over Nym, a budget, and a merchant
+            client that buys real goods. Merchants get <code>createGateway()</code>, which verifies with a viewing key. Any
+            MCP-capable model gets the same wallet as eight tools.
           </p>
         </div>
         <div className="code-card frame">
           <div className="tabs" role="tablist">
             {(
               [
-                ['agent', 'Agent (buyer)'],
-                ['seller', 'Seller'],
+                ['agent', 'Wallet (agent)'],
+                ['seller', 'Gateway (merchant)'],
                 ['mcp', 'MCP'],
               ] as const
             ).map(([k, label]) => (

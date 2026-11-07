@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { chainName, explorer, short, startRun, zec, type AgentEvent, type ConsoleState, type Run } from './api';
-import { Nav } from './chrome';
+import { Nav, RoleIcon } from './chrome';
 import { useConsole } from './useConsole';
 
-const VEILS = ['Entry gateway', 'Mix 1', 'Mix 2', 'Mix 3', 'Tsuki’s gateway'];
+const VEILS = ['Entry gateway', 'Mix 1', 'Mix 2', 'Mix 3', 'Merchant’s Nym gateway'];
 
 const EVENT_LABEL: Record<string, string> = {
   request: 'Request sent into the mixnet',
@@ -13,7 +13,7 @@ const EVENT_LABEL: Record<string, string> = {
   paying: 'Paying in shielded ZEC',
   paid: 'Payment broadcast',
   pending: 'Waiting for the block',
-  settled: 'Payment verified by Tsuki',
+  settled: 'Payment verified by the merchant gateway',
   response: 'Response received',
   error: 'Error',
 };
@@ -50,7 +50,7 @@ export function Console() {
             <span className="eyebrow">
               <span className={`dot ${state ? '' : 'dot-off'}`} /> Console · Zcash {chainName()} · Nym mainnet mixnet
             </span>
-            <h1 className="console-title">Kumo pays Tsuki, in the dark.</h1>
+            <h1 className="console-title">Your agent pays an API, in the dark.</h1>
           </div>
           <NodePills state={state} />
         </header>
@@ -74,16 +74,16 @@ export function Console() {
 
         <div className="console-grid">
           <AgentPanel
-            who="kumo"
-            name="Kumo"
-            role="Buyer agent"
+            who="wallet"
+            name="Agent wallet"
+            role="Your agent · oboro SDK"
             lines={[
-              ['Wallet', state?.buyer.ok ? 'Shielded · local spending key' : (state?.buyer.error ?? '—')],
-              ['Balance', state?.buyer.balanceZats !== undefined ? `${zec(state.buyer.balanceZats)} ${chainName() === 'mainnet' ? 'ZEC' : 'TAZ'}` : '—'],
+              ['Wallet', state?.wallet.ok ? 'Shielded · local spending key' : (state?.wallet.error ?? '—')],
+              ['Balance', state?.wallet.balanceZats !== undefined ? `${zec(state.wallet.balanceZats)} ${chainName() === 'mainnet' ? 'ZEC' : 'TAZ'}` : '—'],
               [
                 'Spent today',
-                state?.buyer.spentTodayZats !== undefined
-                  ? `${state.buyer.spentTodayZats.toLocaleString('en-US')} / ${(state.buyer.dailyCapZats ?? 0).toLocaleString('en-US')} zats`
+                state?.wallet.spentTodayZats !== undefined
+                  ? `${state.wallet.spentTodayZats.toLocaleString('en-US')} / ${(state.wallet.dailyCapZats ?? 0).toLocaleString('en-US')} zats`
                   : '—',
               ],
             ]}
@@ -102,7 +102,7 @@ export function Console() {
                   <span className="buy-price">{c.priceZats.toLocaleString('en-US')} zats</span>
                 </button>
               ))}
-              {state && state.catalog.length === 0 && <p className="empty">Tsuki is not advertising anything yet.</p>}
+              {state && state.catalog.length === 0 && <p className="empty">The merchant gateway is not advertising anything yet.</p>}
               <a className="buy buy-shop" href="#/shop">
                 <span className="buy-path mono">/v1/shop/buy</span>
                 <span className="buy-desc">A real Bitrefill gift card, authorised by a shielded payment</span>
@@ -115,26 +115,26 @@ export function Console() {
           <section className="veil-panel" aria-label="Request path through the mixnet">
             <div className="veil-stage">
               <div className="veil-cols" aria-hidden="true">
-                <span className="veil-node">Kumo</span>
+                <span className="veil-node">Your agent</span>
                 {VEILS.map((v, i) => (
                   <span key={v} className="veil-col" style={{ ['--i' as string]: i }}>
                     <em>{v}</em>
                   </span>
                 ))}
-                <span className="veil-node moon">Tsuki</span>
+                <span className="veil-node moon">Merchant</span>
               </div>
               {active?.status === 'running' && <span className="packet" aria-hidden="true" />}
             </div>
-            {active ? <RunDetail run={active} /> : <p className="empty center">No runs yet. Pick something for Kumo to buy.</p>}
+            {active ? <RunDetail run={active} /> : <p className="empty center">No payments yet. Pick an API for your agent to pay for.</p>}
           </section>
 
           <AgentPanel
-            who="tsuki"
-            name="Tsuki"
+            who="gateway"
+            name="Merchant gateway"
             role="Seller agent · no public port"
             lines={[
               ['Nym address', short(state?.gate.nymAddress, 10, 8)],
-              ['Pay-to (shielded)', short(state?.seller.payTo, 10, 6)],
+              ['Pay-to (shielded)', short(state?.gateway.payTo, 10, 6)],
               ['Server holds', 'Viewing key only'],
             ]}
           >
@@ -156,8 +156,8 @@ function NodePills({ state }: { state: ConsoleState | null }) {
   );
   return (
     <div className="node-pills">
-      {pill('Kumo’s tunnel', state?.tunnel.ok, state?.tunnel.ok ? short(state.tunnel.nymAddress, 6, 4) : 'down')}
-      {pill('Tsuki’s gate', state?.gate.ok, state?.gate.ok ? `${state.gate.served ?? 0} served` : 'down')}
+      {pill('Wallet tunnel', state?.tunnel.ok, state?.tunnel.ok ? short(state.tunnel.nymAddress, 6, 4) : 'down')}
+      {pill('Merchant gate', state?.gate.ok, state?.gate.ok ? `${state.gate.served ?? 0} served` : 'down')}
     </div>
   );
 }
@@ -169,7 +169,7 @@ function AgentPanel({
   lines,
   children,
 }: {
-  who: 'kumo' | 'tsuki';
+  who: 'wallet' | 'gateway';
   name: string;
   role: string;
   lines: [string, string][];
@@ -178,7 +178,7 @@ function AgentPanel({
   return (
     <section className={`agent agent-${who}`} aria-label={name}>
       <div className="agent-head">
-        <img src={`/${who}.jpg`} alt="" className="portrait" width={64} height={64} />
+        <RoleIcon who={who} size={64} />
         <div>
           <h2>{name}</h2>
           <p className="fine">{role}</p>
@@ -198,8 +198,8 @@ function AgentPanel({
 }
 
 function Budget({ state }: { state: ConsoleState | null }) {
-  const spent = state?.buyer.spentTodayZats ?? 0;
-  const cap = state?.buyer.dailyCapZats ?? 0;
+  const spent = state?.wallet.spentTodayZats ?? 0;
+  const cap = state?.wallet.dailyCapZats ?? 0;
   const pct = cap ? Math.min(100, (spent / cap) * 100) : 0;
   return (
     <div className="budget" aria-label="Daily budget">
@@ -207,7 +207,7 @@ function Budget({ state }: { state: ConsoleState | null }) {
         <span style={{ width: `${pct}%` }} />
       </div>
       <p className="fine">
-        Policy: ≤ {(state?.buyer.maxPerRequestZats ?? 0).toLocaleString('en-US')} zats per call · daily cap{' '}
+        Policy: ≤ {(state?.wallet.maxPerRequestZats ?? 0).toLocaleString('en-US')} zats per call · daily cap{' '}
         {cap.toLocaleString('en-US')} zats · checked before any transaction exists
       </p>
     </div>
@@ -235,7 +235,7 @@ function RunDetail({ run }: { run: Run }) {
     <div className="run-detail">
       <div className="run-top">
         <span className={`status s-${run.status}`}>{run.status}</span>
-        <span className="mono">GET nym://Tsuki{run.path}</span>
+        <span className="mono">GET nym://merchant{run.path}</span>
         {run.mixMs !== undefined && <span className="fine mono">mixnet round trip {(run.mixMs / 1000).toFixed(1)} s</span>}
       </div>
       <ol className="timeline">
@@ -278,12 +278,12 @@ function TimelineItem({ e }: { e: AgentEvent }) {
 }
 
 function SellerSaw({ state }: { state: ConsoleState | null }) {
-  const ev = (state?.seller.gateEvents ?? []).filter((e) => e.kind === 'request').slice(-5).reverse();
+  const ev = (state?.gateway.gateEvents ?? []).filter((e) => e.kind === 'request').slice(-5).reverse();
   return (
     <div className="saw-box">
-      <h3 className="mini">What Tsuki could see</h3>
+      <h3 className="mini">What the merchant could see</h3>
       {ev.length === 0 ? (
-        <p className="empty">No requests have reached Tsuki yet.</p>
+        <p className="empty">No requests have reached the merchant yet.</p>
       ) : (
         <ul className="saw-list">
           {ev.map((e) => (
@@ -309,10 +309,10 @@ function SellerSaw({ state }: { state: ConsoleState | null }) {
 }
 
 function Ledger({ state }: { state: ConsoleState | null }) {
-  const rows = (state?.seller.ledger ?? []).slice(-6).reverse();
+  const rows = (state?.gateway.ledger ?? []).slice(-6).reverse();
   return (
     <div className="ledger">
-      <h3 className="mini">Tsuki’s ledger</h3>
+      <h3 className="mini">Merchant’s payment ledger</h3>
       {rows.length === 0 ? (
         <p className="empty">Nothing paid yet.</p>
       ) : (

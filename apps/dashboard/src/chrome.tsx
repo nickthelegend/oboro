@@ -25,8 +25,8 @@ export function Nav({ console = false }: { console?: boolean }) {
         <a href="#how" className="hide-sm">
           How it works
         </a>
-        <a href="#shop" className="hide-sm">
-          Shop
+        <a href="#layers" className="hide-sm">
+          Layers
         </a>
         <a href="#sdk" className="hide-sm">
           SDK
@@ -44,18 +44,12 @@ export function Nav({ console = false }: { console?: boolean }) {
       </a>
       <div className="nav-actions">
         <span className="net-pill mono">{chainName()}</span>
-        <a className="nav-shop hide-sm" href="#/shop">
-          Shop
+        <a className="nav-shop hide-sm" href="#/console">
+          Developers
         </a>
-        {!console ? (
-          <a className="btn btn-moon btn-sm" href="#/console">
-            Console
-          </a>
-        ) : (
-          <a className="btn btn-ghost btn-sm" href="#/console">
-            Console
-          </a>
-        )}
+        <a className={`btn ${console ? 'btn-ghost' : 'btn-moon'} btn-sm`} href="#/shop">
+          Open wallet
+        </a>
       </div>
     </nav>
   );
@@ -105,5 +99,29 @@ export function Footer() {
         oboro
       </div>
     </footer>
+  );
+}
+
+/** Role badge for the two sides of a payment: the agent's wallet and the merchant's gateway. */
+export function RoleIcon({ who, size = 48 }: { who: 'wallet' | 'gateway'; size?: number }) {
+  return (
+    <span className={`role-icon role-${who}`} style={{ width: size, height: size }} aria-hidden="true">
+      <svg viewBox="0 0 24 24" width={size * 0.5} height={size * 0.5} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        {who === 'wallet' ? (
+          <>
+            <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3" />
+            <rect x="4" y="8" width="16" height="11" rx="2.5" />
+            <path d="M16 13.5h2" />
+          </>
+        ) : (
+          <>
+            <path d="M4 10l1.5-5h13L20 10" />
+            <path d="M4 10a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0" />
+            <path d="M5.5 12.5V19h13v-6.5" />
+            <path d="M10 19v-4h4v4" />
+          </>
+        )}
+      </svg>
+    </span>
   );
 }

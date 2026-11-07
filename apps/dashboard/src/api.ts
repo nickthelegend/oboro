@@ -66,7 +66,7 @@ export type ConsoleState = {
   setup: string[];
   tunnel: NodeStatus;
   gate: NodeStatus;
-  buyer: {
+  wallet: {
     ok: boolean;
     balanceZats?: number;
     balanceAt?: string;
@@ -75,7 +75,7 @@ export type ConsoleState = {
     maxPerRequestZats?: number;
     error?: string;
   };
-  seller: {
+  gateway: {
     ok: boolean;
     payTo?: string;
     ledger: LedgerRow[];
@@ -117,7 +117,7 @@ export const chainName = () => (mainnet ? 'mainnet' : 'testnet');
 // mainnet.zcashexplorer.app did not index our v6 mainnet transactions; Blockchair does.
 export const explorer = (txid: string) => (mainnet ? `https://blockchair.com/zcash/transaction/${txid}` : `https://testnet.zcashexplorer.app/transactions/${txid}`);
 
-// ───────── Shop (Bitrefill through Tsuki) ─────────
+// ───────── Shop (Bitrefill through gateway) ─────────
 export type ShopStep = { ts: string; type: string; detail?: string; txid?: string; zats?: number; usd?: number; mixMs?: number; status?: number };
 export type ShopRun = {
   id: string; startedAt: string; finishedAt?: string;
@@ -128,7 +128,7 @@ export type ShopRun = {
 };
 export type ShopPurchase = { txid: string; status: string; product_id: string; value: string; usd: number; phone_masked?: string; invoice_id?: string; order_ids: string[]; code_masked?: Record<string, unknown>; created_at: string; updated_at: string };
 export type ShopState = {
-  tsuki: { ledger?: ShopPurchase[]; guardrails?: { allow: { product_id: string; values: (string | number)[] }[]; maxUsdPerPurchase: number; maxUsdPerDay: number; maxPurchasesPerDay: number }; today?: { usd: number; count: number }; setup?: string[]; error?: string };
+  gateway: { ledger?: ShopPurchase[]; guardrails?: { allow: { product_id: string; values: (string | number)[] }[]; maxUsdPerPurchase: number; maxUsdPerDay: number; maxPurchasesPerDay: number }; today?: { usd: number; count: number }; setup?: string[]; error?: string };
   consoleSetup: string[];
   phoneMasked?: string;
   runs: ShopRun[];
@@ -144,7 +144,7 @@ export async function startShopRun(product_id: string, value: string): Promise<{
   if (!res.ok) throw new Error(body.error ?? `run refused (${res.status})`);
   return body;
 }
-export async function saveShopSetup(input: { apiKey?: string; phone?: string; liveBuy?: boolean }): Promise<{ saved: string[]; restartedTsuki: boolean }> {
+export async function saveShopSetup(input: { apiKey?: string; phone?: string; liveBuy?: boolean }): Promise<{ saved: string[]; restartedGateway: boolean }> {
   const res = await fetch('/api/setup/shop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `setup refused (${res.status})`);
@@ -153,9 +153,9 @@ export async function saveShopSetup(input: { apiKey?: string; phone?: string; li
 
 export type ToolTrace = { name: string; args: Record<string, unknown>; summary: string; ok: boolean; mixMs?: number };
 export type ChatTurn = { role: 'user' | 'assistant'; text: string; tools?: ToolTrace[]; runId?: string; at: string };
-export async function chatKumo(sessionId: string, message: string): Promise<{ sessionId: string; turns: ChatTurn[] }> {
+export async function chatAgent(sessionId: string, message: string): Promise<{ sessionId: string; turns: ChatTurn[] }> {
   const res = await fetch('/api/agent/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, message }) });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `Kumo is unavailable (${res.status})`);
+  if (!res.ok) throw new Error(body.error ?? `agent wallet is unavailable (${res.status})`);
   return body;
 }

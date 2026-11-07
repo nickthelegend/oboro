@@ -3,7 +3,7 @@ import express from 'express';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BitrefillClient, Guardrails, ShopLedger } from '@oboro/shop';
+import { BitrefillClient, bitrefillConnector, Guardrails, ShopLedger } from '@oboro/shop';
 import { mountShop } from './shop-routes.js';
 
 const dirs: string[] = [];
@@ -15,7 +15,7 @@ it('free dashboard exposes masked state without receipt or approval bearer token
   const record = await ledger.reserve({ txid: 'b'.repeat(64), product_id: 'airtel-india', value: 10, usd: 0.11, phone_number: '+919876543210', approval: true });
   await ledger.delivered(record.txid, { id: 'order1', status: 'delivered', redemption_info: { code: 'ABSECRET12CD' } });
   const app = express();
-  mountShop(app, { paywall: { price: () => (_req, _res, next) => next() }, client: new BitrefillClient(''), guardrails: new Guardrails(), ledger });
+  mountShop(app, { paywall: { price: () => (_req, _res, next) => next() }, connector: bitrefillConnector(new BitrefillClient('')), guardrails: new Guardrails(), ledger });
   const server = app.listen(0, '127.0.0.1');
   try {
     await new Promise<void>(resolve => server.once('listening', () => resolve()));

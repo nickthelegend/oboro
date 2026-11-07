@@ -1,6 +1,6 @@
-// Kumo's brain: an LLM (OpenRouter, model from OBORO_AGENT_MODEL) with tools that only reach the world through Oboro.
-// Every tool talks to Tsuki over the Nym mixnet; the only way to spend is buy(), which pays Tsuki in shielded ZEC and
-// lets Tsuki's guardrails decide. The model never sees a wallet key, a Bitrefill key or an unmasked code.
+// agent wallet's brain: an LLM (OpenRouter, model from OBORO_AGENT_MODEL) with tools that only reach the world through Oboro.
+// Every tool talks to gateway over the Nym mixnet; the only way to spend is buy(), which pays gateway in shielded ZEC and
+// lets gateway's guardrails decide. The model never sees a wallet key, a Bitrefill key or an unmasked code.
 import { randomUUID } from 'node:crypto';
 
 export type ToolTrace = { name: string; args: Record<string, unknown>; summary: string; ok: boolean; mixMs?: number };
@@ -14,47 +14,47 @@ export interface AgentDeps {
   budget: () => { balanceZats?: number; spentTodayZats: number; dailyCapZats: number; maxPerRequestZats: number };
 }
 
-const SYSTEM = `You are Kumo, a shopping agent that buys small real things for your owner on Bitrefill (gift cards).
-You have no Bitrefill account, no card and no exposed IP. You can only act through your tools, which reach Tsuki, a
-seller agent, over the Nym mixnet. To buy, you pay Tsuki 5,000 zatoshis of shielded testnet Zcash; that payment
-authorises Tsuki to buy the item from its Bitrefill store credits, inside Tsuki's published rules.
+const SYSTEM = `You are the user's agent, which pays and shops only through its Oboro wallet.
+You have no Bitrefill account, no card and no exposed IP. Your tools reach the merchant gateway over the Nym mixnet.
+To buy, your Oboro wallet pays the merchant gateway 5,000 zatoshis of shielded testnet Zcash; that payment
+authorises the merchant gateway to buy the item from its Bitrefill store credits, inside the gateway's published rules.
 How to work:
-- First call shop_rules to learn what Tsuki is allowed to sell and the caps. Use search_products and get_product to find
+- First call shop_rules to learn what gateway is allowed to sell and the caps. Use search_products and get_product to find
   real items and prices. Prices are in USD from Bitrefill; values are in the product's currency (₹ for India).
 - Only call buy when the owner clearly asked to buy, the exact product and value are allowed, and it fits the caps.
   If something isn't sold or is above the cap, don't buy it: say so plainly and offer an allowed option.
-- Above the cap (rule "needs_human_approval"): explain that Tsuki's operator must approve it. Only if the owner then
-  explicitly says to go ahead anyway, call buy with request_approval=true: you pay, Tsuki parks the purchase, and
-  nothing is bought until a human on Tsuki's side approves. You can never approve anything yourself.
+- Above the cap (rule "needs_human_approval"): explain that gateway's operator must approve it. Only if the owner then
+  explicitly says to go ahead anyway, call buy with request_approval=true: you pay, gateway parks the purchase, and
+  nothing is bought until a human on gateway's side approves. You can never approve anything yourself.
 - A purchase takes a few minutes (the payment must be mined). After buy starts it, say that it's running and that
   progress shows in the panel. Use check_purchase if asked how it's going.
 - Codes are cash: you never see them and never ask for them. Never ask for card numbers, passwords or personal data.
 Reply in 1 to 3 short sentences, friendly and concrete, with prices in both ₹ and $ when you quote.`;
 
 const TOOLS = [
-  { type: 'function', function: { name: 'shop_rules', description: "Tsuki's published shop rules: allowed products and values, per-purchase and daily caps, today's totals; plus Kumo's own wallet budget.", parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'search_products', description: "Search Tsuki's Bitrefill catalog (India) over the Nym mixnet.", parameters: { type: 'object', properties: { query: { type: 'string', description: 'e.g. "swiggy", "google play", "uber"' } }, required: ['query'] } } },
-  { type: 'function', function: { name: 'get_product', description: 'Live packages and USD prices for one product, each marked allowed / needs_human_approval / not_sold_by_tsuki under the rules.', parameters: { type: 'object', properties: { product_id: { type: 'string' } }, required: ['product_id'] } } },
-  { type: 'function', function: { name: 'buy', description: 'Pay Tsuki in shielded ZEC over Nym to buy one allowed product value. Starts the purchase and returns immediately.', parameters: { type: 'object', properties: { product_id: { type: 'string' }, value: { type: 'string', description: 'package value exactly as listed, e.g. "50"' }, request_approval: { type: 'boolean', description: "Only after the owner explicitly confirmed an over-cap purchase: submit it for human approval on Tsuki's side." } }, required: ['product_id', 'value'] } } },
+  { type: 'function', function: { name: 'shop_rules', description: "gateway's published shop rules: allowed products and values, per-purchase and daily caps, today's totals; plus agent wallet's own wallet budget.", parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'search_products', description: "Search gateway's Bitrefill catalog (India) over the Nym mixnet.", parameters: { type: 'object', properties: { query: { type: 'string', description: 'e.g. "swiggy", "google play", "uber"' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'get_product', description: 'Live packages and USD prices for one product, each marked allowed / needs_human_approval / not_sold_by_gateway under the rules.', parameters: { type: 'object', properties: { product_id: { type: 'string' } }, required: ['product_id'] } } },
+  { type: 'function', function: { name: 'buy', description: 'Pay gateway in shielded ZEC over Nym to buy one allowed product value. Starts the purchase and returns immediately.', parameters: { type: 'object', properties: { product_id: { type: 'string' }, value: { type: 'string', description: 'package value exactly as listed, e.g. "50"' }, request_approval: { type: 'boolean', description: "Only after the owner explicitly confirmed an over-cap purchase: submit it for human approval on gateway's side." } }, required: ['product_id', 'value'] } } },
   { type: 'function', function: { name: 'check_purchase', description: 'Status of a purchase started with buy.', parameters: { type: 'object', properties: { run_id: { type: 'string' } }, required: ['run_id'] } } },
 ];
 
 type Rules = { allow: { product_id: string; values: (string | number)[] }[]; maxUsdPerPurchase: number; maxUsdPerDay: number; maxPurchasesPerDay: number };
 
-export function createKumo(deps: AgentDeps) {
+export function createChatAgent(deps: AgentDeps) {
   const sessions = new Map<string, { msgs: Msg[]; turns: ChatTurn[] }>();
   let rulesCache: { at: number; rules?: Rules; today?: { usd: number; count: number } } = { at: 0 };
 
   async function rules() {
     if (Date.now() - rulesCache.at < 30_000 && rulesCache.rules) return rulesCache;
     const r = await deps.viaNym('/oboro/shop');
-    if (r.status !== 200) throw new Error(`Tsuki's rules unavailable (HTTP ${r.status})`);
+    if (r.status !== 200) throw new Error(`gateway's rules unavailable (HTTP ${r.status})`);
     rulesCache = { at: Date.now(), rules: r.body.guardrails as Rules, today: r.body.today as { usd: number; count: number } };
     return rulesCache;
   }
   const verdict = (rl: Rules, today: { usd: number; count: number } | undefined, id: string, value: string, usd: number) => {
     const a = rl.allow.find((x) => x.product_id === id);
-    if (!a || !a.values.some((v) => String(v) === value)) return 'not_sold_by_tsuki';
+    if (!a || !a.values.some((v) => String(v) === value)) return 'not_sold_by_gateway';
     if (usd > rl.maxUsdPerPurchase) return 'needs_human_approval';
     if (today && (today.usd + usd > rl.maxUsdPerDay || today.count >= rl.maxPurchasesPerDay)) return 'needs_human_approval';
     return 'allowed';
@@ -65,7 +65,7 @@ export function createKumo(deps: AgentDeps) {
     try {
       if (name === 'shop_rules') {
         const r = await rules(); const b = deps.budget();
-        return { result: { tsuki: r.rules, today: r.today, kumo: { balanceZats: b.balanceZats, spentTodayZats: b.spentTodayZats, dailyCapZats: b.dailyCapZats, costPerPurchaseZats: 5000 } }, trace: t(`${r.rules?.allow.length ?? 0} products allowed · ≤ $${r.rules?.maxUsdPerPurchase} each · $${r.rules?.maxUsdPerDay}/day`) };
+        return { result: { gateway: r.rules, today: r.today, wallet: { balanceZats: b.balanceZats, spentTodayZats: b.spentTodayZats, dailyCapZats: b.dailyCapZats, costPerPurchaseZats: 5000 } }, trace: t(`${r.rules?.allow.length ?? 0} products allowed · ≤ $${r.rules?.maxUsdPerPurchase} each · $${r.rules?.maxUsdPerDay}/day`) };
       }
       if (name === 'search_products') {
         const q = String(args.query ?? '').slice(0, 60);
@@ -88,14 +88,14 @@ export function createKumo(deps: AgentDeps) {
         const p = ((r.body.packages as { value: string; usd: number }[]) ?? []).find((x) => String(x.value) === value);
         if (!p) return { result: { refused: `No ${value} package for ${id}` }, trace: t(`refused: no ${value} package`, false) };
         const v = verdict(rr.rules!, rr.today, id, value, p.usd);
-        // Kumo checks the seller's published rules before paying, so a refused purchase never costs a payment.
+        // agent wallet checks the seller's published rules before paying, so a refused purchase never costs a payment.
         const parked = v === 'needs_human_approval' && args.request_approval === true;
-        if (v !== 'allowed' && !parked) return { result: { refused: v, usd: p.usd, note: v === 'needs_human_approval' ? 'Above the cap: nothing paid, nothing bought. A human approves out of band.' : 'Tsuki does not sell this value.' }, trace: t(`${v.replace(/_/g, ' ')} · $${p.usd.toFixed(2)} · nothing paid`, false) };
+        if (v !== 'allowed' && !parked) return { result: { refused: v, usd: p.usd, note: v === 'needs_human_approval' ? 'Above the cap: nothing paid, nothing bought. A human approves out of band.' : 'gateway does not sell this value.' }, trace: t(`${v.replace(/_/g, ' ')} · $${p.usd.toFixed(2)} · nothing paid`, false) };
         const launched = await deps.launchShopRun(id, value);
         if (!launched.run) return { result: { error: launched.error }, trace: t(launched.error ?? 'could not start', false) };
         turn.runId = launched.run.id;
-        if (parked) return { result: { started: true, run_id: launched.run.id, usd: p.usd, note: 'Over the cap: paying Tsuki 5,000 zats; Tsuki parks it and buys nothing until its human operator approves.' }, trace: t(`submitted for human approval · ${id} ₹${value} · $${p.usd.toFixed(2)}`) };
-        return { result: { started: true, run_id: launched.run.id, usd: p.usd, note: 'Paying Tsuki 5,000 zats shielded over Nym; Bitrefill delivers after the block is mined (a few minutes).' }, trace: t(`started · ${id} ₹${value} · $${p.usd.toFixed(2)}`) };
+        if (parked) return { result: { started: true, run_id: launched.run.id, usd: p.usd, note: 'Over the cap: paying gateway 5,000 zats; gateway parks it and buys nothing until its human operator approves.' }, trace: t(`submitted for human approval · ${id} ₹${value} · $${p.usd.toFixed(2)}`) };
+        return { result: { started: true, run_id: launched.run.id, usd: p.usd, note: 'Paying gateway 5,000 zats shielded over Nym; Bitrefill delivers after the block is mined (a few minutes).' }, trace: t(`started · ${id} ₹${value} · $${p.usd.toFixed(2)}`) };
       }
       if (name === 'check_purchase') {
         const run = deps.shopRun(String(args.run_id ?? ''));
@@ -115,7 +115,7 @@ export function createKumo(deps: AgentDeps) {
     if (!key) throw new Error('Setup required: OPENROUTER_API_KEY');
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', 'X-Title': 'Oboro Kumo' },
+      headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', 'X-Title': 'Oboro agent wallet' },
       body: JSON.stringify({ model: process.env.OBORO_AGENT_MODEL ?? 'anthropic/claude-haiku-5.5', max_tokens: 500, messages: msgs, tools: TOOLS, tool_choice: 'auto' }),
       signal: AbortSignal.timeout(90_000),
     });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the whole Oboro stack on this machine: Tsuki (seller), Tsuki's gate, Kumo's tunnel, the console.
+# Start the whole Oboro stack on this machine: gateway (seller), gateway's gate, agent wallet's tunnel, the console.
 # PIDs go to .oboro/pids; stop everything with scripts/down.sh. Logs go to .oboro/logs/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -22,14 +22,14 @@ mkdir -p .oboro/gate .oboro/tunnel .oboro/logs
 start() { local name=$1; shift; "$@" > ".oboro/logs/$name.log" 2>&1 & echo "$! $name" >> .oboro/pids; }
 pnpm --filter oboro build >/dev/null
 pnpm --filter @oboro/dashboard build >/dev/null
-start tsuki pnpm --filter @oboro/agents exec tsx src/seller.ts
+start gateway pnpm --filter @oboro/agents exec tsx src/seller.ts
 start gate "$node_bin" gate --upstream http://127.0.0.1:7420 --data .oboro/gate --status 127.0.0.1:7411
 start tunnel "$node_bin" tunnel --listen 127.0.0.1:7410 --data .oboro/tunnel
 start console pnpm --filter @oboro/dashboard exec tsx server.ts
 echo "Waiting for both Nym clients to connect…"
 for _ in $(seq 1 180); do
   if [[ -s .oboro/gate/address.txt ]] && curl -fsS http://127.0.0.1:7410/status >/dev/null 2>&1; then
-    echo "Tsuki's Nym address: $(cut -c1-24 .oboro/gate/address.txt)…"
+    echo "gateway's Nym address: $(cut -c1-24 .oboro/gate/address.txt)…"
     echo "Console: http://127.0.0.1:7430/#/console"
     exit 0
   fi

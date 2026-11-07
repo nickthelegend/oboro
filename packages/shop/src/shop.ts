@@ -124,6 +124,24 @@ export class ShopLedger {
   async list() { return Object.values((await this.read()).purchases); }
   async today(now = new Date()) { const day = indiaDay(now); const entries = (await this.list()).filter(p => indiaDay(new Date(p.created_at)) === day && p.status !== 'needs_approval' && p.status !== 'refused'); return { usd: Math.round(entries.reduce((sum,p) => sum + p.usd, 0) * 100) / 100, count: entries.length }; }
 }
+export interface CommerceConnector {
+  name: string;
+  hasKey(): boolean;
+  search(q: string): Promise<SearchResult[]>;
+  product(id: string, fresh?: boolean): Promise<Product>;
+  buy(guardrails: Guardrails, ledger: ShopLedger, txid: string, input: { product_id: string; value: number | string; phone_number?: string }): Promise<{ invoice: Invoice; order: Order }>;
+  status(id: string): Promise<Invoice>;
+}
+export function bitrefillConnector(client = new BitrefillClient()): CommerceConnector {
+  return {
+    name: 'bitrefill',
+    hasKey: () => client.hasKey(),
+    search: (q) => client.searchProducts(q, 'IN'),
+    product: (id, fresh) => client.getProduct(id, fresh),
+    buy: (guardrails, ledger, txid, input) => fulfil(client, guardrails, ledger, txid, input),
+    status: (id) => client.getInvoice(id)
+  };
+}
 export function classify(invoice: Invoice, order?: Order): 'poll' | 'delivered' | 'failed' | 'refunded' | 'blocked' | 'denied' | 'payment_error' {
   if (['blocked', 'denied', 'payment_error'].includes(invoice.status)) return invoice.status as 'blocked' | 'denied' | 'payment_error';
   if (order?.status === 'failed' || order?.status === 'refunded') return order.status;

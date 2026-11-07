@@ -1,6 +1,6 @@
 # @oboro/shop
 
-Tsuki's guarded Bitrefill shop. A confirmed shielded Zcash testnet x402 payment **authorises** one purchase; Bitrefill charges the operator's event-credit balance in real money. TAZ does not pay Bitrefill.
+the gateway's guarded Bitrefill shop. A confirmed shielded Zcash testnet x402 payment **authorises** one purchase; Bitrefill charges the operator's event-credit balance in real money. TAZ does not pay Bitrefill.
 
 ## Setup
 

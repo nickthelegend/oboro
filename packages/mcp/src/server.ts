@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createAgent, required, ZingoWallet } from 'oboro';
+import { createWallet, required, ZingoWallet } from 'oboro';
 
 type ShopReply = Record<string, unknown>;
 const shopUrl = (path: string) => `nym://${required('OBORO_SELLER_NYM_ADDRESS')}${path}`;
@@ -29,7 +29,7 @@ function purchaseResult(statusCode: number, body: ShopReply) {
 
 function configuredAgent() {
   const recipient = required('OBORO_SELLER_NYM_ADDRESS');
-  return createAgent({
+  return createWallet({
     tunnelUrl: process.env.OBORO_TUNNEL_URL ?? 'http://127.0.0.1:7410',
     wallet: new ZingoWallet({ dataDir: required('OBORO_BUYER_WALLET_DIR') }),
     policy: { maxPerRequestZats: Number(process.env.OBORO_MAX_PER_REQUEST_ZATS ?? 50_000), dailyCapZats: Number(process.env.OBORO_DAILY_CAP_ZATS ?? 300_000), allowRecipients: [recipient] },
@@ -49,12 +49,15 @@ export function createMcpServer() {
     const agent = configuredAgent();
     return { content: [{ type: 'text' as const, text: JSON.stringify({ spentTodayZats: await agent.spentToday(), maxPerRequestZats: agent.policy.maxPerRequestZats, dailyCapZats: agent.policy.dailyCapZats }) }] };
   });
+  server.registerTool('oboro_wallet_budget', { description: 'Show the agent wallet’s payment cap, daily cap, spent amount and remaining daily budget', inputSchema: {} }, async () => {
+    return toolResult(await configuredAgent().budget());
+  });
   server.registerTool('oboro_status', { description: 'Show local Oboro tunnel status', inputSchema: {} }, async () => {
     const url = `${(process.env.OBORO_TUNNEL_URL ?? 'http://127.0.0.1:7410').replace(/\/$/, '')}/status`;
     const response = await fetch(url);
     return { content: [{ type: 'text' as const, text: JSON.stringify({ status: response.status, body: (await response.text()).slice(0, 8192) }) }] };
   });
-  server.registerTool('oboro_shop_search', { description: 'Search real Bitrefill products through Tsuki over Nym. Purchases use the operator’s real event credits; a shielded ZEC payment authorises them and spend caps apply.', inputSchema: { query: z.string().min(1) } }, async ({ query }) => {
+  server.registerTool('oboro_shop_search', { description: 'Search real Bitrefill products through gateway over Nym. Purchases use the operator’s real event credits; a shielded ZEC payment authorises them and spend caps apply.', inputSchema: { query: z.string().min(1) } }, async ({ query }) => {
     const response = await configuredAgent().fetch(shopUrl(`/v1/shop/search?q=${encodeURIComponent(query)}`));
     return toolResult({ status: response.status, ...await shopReply(response) }, !response.ok);
   });

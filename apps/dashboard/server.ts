@@ -1,5 +1,5 @@
 // Oboro console server: the only backend the dashboard talks to.
-// It reads live status from the two oboro-node processes and Tsuki, and runs Kumo (the buyer agent)
+// It reads live status from the two oboro-node processes and gateway, and runs agent wallet (the buyer agent)
 // through the real SDK when you press a button. Nothing here is simulated: if a piece is down, /api/state says so.
 import express from 'express';
 import { chmodSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs';
@@ -7,8 +7,8 @@ import { execFileSync, spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { createAgent, ZingoWallet, OboroError, type AgentEvent } from 'oboro';
-import { createKumo } from './agent.js';
+import { createWallet, ZingoWallet, OboroError, type AgentEvent } from 'oboro';
+import { createChatAgent } from './agent.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../..');
@@ -36,8 +36,8 @@ const NETWORK = CHAIN === 'mainnet' ? 'zcash-mainnet' : 'zcash-testnet';
 const EXPLORER = CHAIN === 'mainnet' ? 'https://blockchair.com/zcash/transaction/' : 'https://testnet.zcashexplorer.app/transactions/';
 
 const CATALOG = [
-  { endpoint: 'tip', path: '/v1/intel/tip', priceZats: 2_000, description: 'Latest Zcash testnet height, read by Tsuki' },
-  { endpoint: 'fees', path: '/v1/intel/fees', priceZats: 3_000, description: 'ZIP 317 fee table, computed by Tsuki' },
+  { endpoint: 'tip', path: '/v1/intel/tip', priceZats: 2_000, description: 'Latest Zcash testnet height, read by gateway' },
+  { endpoint: 'fees', path: '/v1/intel/fees', priceZats: 3_000, description: 'ZIP 317 fee table, computed by gateway' },
 ];
 
 type UiEvent = { ts: string; type: string; detail?: string; txid?: string; zats?: number; mixMs?: number; status?: number };
@@ -98,7 +98,7 @@ async function sellerNymAddress(): Promise<string | undefined> {
 }
 
 type LedgerRow = { ts: string; path: string; priceZats: number; txid?: string; status: string };
-// Tsuki's ledger appends a row per attempt (challenge issued, each pending poll, settled).
+// gateway's ledger appends a row per attempt (challenge issued, each pending poll, settled).
 // Show one row per payment: the latest status for each txid; unpaid challenges are left out.
 function collapseLedger(rows: LedgerRow[]): LedgerRow[] {
   const byTx = new Map<string, LedgerRow>();
@@ -119,10 +119,10 @@ app.get('/api/state', async (_req, res) => {
     getJson<{ ledger: unknown[]; payTo?: string }>(`${SELLER}/oboro/ledger`),
   ]);
   const setup: string[] = [];
-  if (!process.env.OBORO_BUYER_WALLET_DIR) setup.push('OBORO_BUYER_WALLET_DIR (Kumo’s wallet)');
+  if (!process.env.OBORO_BUYER_WALLET_DIR) setup.push('OBORO_BUYER_WALLET_DIR (agent wallet)');
   if (tunnel.status === 'rejected') setup.push('oboro-node tunnel on 7410');
   if (gate.status === 'rejected') setup.push('oboro-node gate status on 7411');
-  if (ledger.status === 'rejected') setup.push('Tsuki (apps/agents seller) on 7420');
+  if (ledger.status === 'rejected') setup.push('gateway (apps/agents seller) on 7420');
 
   const node = (r: PromiseSettledResult<Record<string, unknown>>) =>
     r.status === 'fulfilled'
@@ -142,7 +142,7 @@ app.get('/api/state', async (_req, res) => {
     setup,
     tunnel: node(tunnel),
     gate: node(gate),
-    buyer: {
+    wallet: {
       ok: !!process.env.OBORO_BUYER_WALLET_DIR && !balanceCache.error,
       balanceZats: balanceCache.zats,
       balanceAt: balanceCache.at,
@@ -151,7 +151,7 @@ app.get('/api/state', async (_req, res) => {
       maxPerRequestZats: MAX_PER,
       error: balanceCache.error,
     },
-    seller: {
+    gateway: {
       ok: ledger.status === 'fulfilled',
       payTo: process.env.OBORO_SELLER_ADDRESS || (ledger.status === 'fulfilled' ? ledger.value.payTo : undefined),
       ledger: ledger.status === 'fulfilled' ? collapseLedger(ledger.value.ledger as LedgerRow[]) : [],
@@ -166,11 +166,11 @@ app.get('/api/state', async (_req, res) => {
 app.post('/api/run', async (req, res) => {
   const item = CATALOG.find((c) => c.endpoint === req.body?.endpoint);
   if (!item) return res.status(400).json({ error: 'Unknown endpoint' });
-  if (runs.some((r) => r.status === 'running')) return res.status(409).json({ error: 'Kumo is already paying for something' });
+  if (runs.some((r) => r.status === 'running')) return res.status(409).json({ error: 'agent wallet is already paying for something' });
   const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
   if (!buyerDir) return res.status(412).json({ error: 'Setup required: OBORO_BUYER_WALLET_DIR' });
-  const tsuki = await sellerNymAddress();
-  if (!tsuki) return res.status(412).json({ error: 'Setup required: Tsuki’s gate is not running (no Nym address)' });
+  const gateway = await sellerNymAddress();
+  if (!gateway) return res.status(412).json({ error: 'Setup required: gateway’s gate is not running (no Nym address)' });
 
   const run: Run = { id: randomUUID(), endpoint: item.endpoint, path: item.path, startedAt: new Date().toISOString(), status: 'running', events: [] };
   runs.unshift(run);
@@ -181,7 +181,7 @@ app.post('/api/run', async (req, res) => {
     const ts = new Date().toISOString();
     switch (e.type) {
       case 'request':
-        return push({ ts, type: 'request', detail: `GET nym://Tsuki${item.path} via Kumo’s tunnel` });
+        return push({ ts, type: 'request', detail: `GET nym://gateway${item.path} via agent wallet’s tunnel` });
       case 'payment_required':
         run.priceZats = e.amountZats;
         return push({ ts, type: 'payment_required', zats: e.amountZats, detail: `Pay to a shielded address (${e.payTo.slice(0, 10)}…)` });
@@ -196,7 +196,7 @@ app.post('/api/run', async (req, res) => {
         return push({ ts, type: 'paid', txid: e.txid, detail: `txid ${e.txid.slice(0, 16)}…` });
       case 'pending':
         if (run.events[run.events.length - 1]?.type === 'pending') return;
-        return push({ ts, type: 'pending', detail: 'Tsuki answers 402 payment_pending until its viewing key sees the mined note (NU7 testnet blocks ≈ 25 s)' });
+        return push({ ts, type: 'pending', detail: 'gateway answers 402 payment_pending until its viewing key sees the mined note (NU7 testnet blocks ≈ 25 s)' });
       case 'settled':
         return push({ ts, type: 'settled', detail: 'Memo, amount and nonce checked with a viewing key' });
       case 'response':
@@ -206,14 +206,14 @@ app.post('/api/run', async (req, res) => {
   };
 
   try {
-    const agent = createAgent({
+    const agent = createWallet({
       tunnelUrl: TUNNEL,
       wallet: new ZingoWallet({ dataDir: buyerDir, chain: CHAIN }),
-      policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [tsuki] },
+      policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [gateway] },
       spendFile: SPEND_FILE,
       onEvent,
     });
-    const response = await agent.fetch(`nym://${tsuki}${item.path}`);
+    const response = await agent.fetch(`nym://${gateway}${item.path}`);
     const text = await response.text();
     run.response = text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
     const pr = response.headers.get('x-payment-response');
@@ -227,7 +227,7 @@ app.post('/api/run', async (req, res) => {
       }
     }
     run.status = response.ok && run.txid ? 'paid' : response.ok ? 'paid' : 'failed';
-    if (!response.ok) run.error = `Tsuki answered HTTP ${response.status}`;
+    if (!response.ok) run.error = `gateway answered HTTP ${response.status}`;
   } catch (e) {
     run.status = e instanceof OboroError && e.code === 'policy_refused' ? 'refused' : 'failed';
     run.error = errMsg(e);
@@ -238,9 +238,9 @@ app.post('/api/run', async (req, res) => {
   }
 });
 
-// ───────────────────────── Shop: Kumo buys a real thing through Tsuki's Bitrefill shop ─────────────────────────
+// ───────────────────────── Shop: agent wallet buys a real thing through gateway's Bitrefill shop ─────────────────────────
 // Every step crosses the Nym mixnet: browse (free), quote (free), then a paid POST whose shielded payment
-// authorises one Bitrefill purchase that Tsuki pays from its event credits. Codes never reach this UI unmasked.
+// authorises one Bitrefill purchase that gateway pays from its event credits. Codes never reach this UI unmasked.
 type ShopStep = { ts: string; type: string; detail?: string; txid?: string; zats?: number; usd?: number; mixMs?: number; status?: number };
 type ShopRun = {
   id: string; startedAt: string; finishedAt?: string;
@@ -259,9 +259,9 @@ const maskRedemption = (r: unknown): Record<string, string> | undefined => {
 };
 const maskPhone = (p?: string) => (p ? `${p.slice(0, 3)} ••••• ${p.slice(-4)}` : undefined);
 
-async function viaNym(tsuki: string, path: string, init: RequestInit = {}) {
+async function viaNym(gateway: string, path: string, init: RequestInit = {}) {
   const started = Date.now();
-  const res = await fetch(`${TUNNEL}/nym/${encodeURIComponent(tsuki)}${path}`, { ...init, signal: AbortSignal.timeout(130_000) });
+  const res = await fetch(`${TUNNEL}/nym/${encodeURIComponent(gateway)}${path}`, { ...init, signal: AbortSignal.timeout(130_000) });
   const body = await res.json().catch(() => ({}));
   return { status: res.status, body: body as Record<string, unknown>, mixMs: Number(res.headers.get('x-oboro-mix-ms')) || Date.now() - started };
 }
@@ -270,17 +270,17 @@ app.get('/api/shop', async (_req, res) => {
   const shop = await getJson<Record<string, unknown>>(`${SELLER}/oboro/shop`).catch((e) => ({ error: errMsg(e) }));
   const setup: string[] = [];
   // A phone is only needed for top-ups (airtel-india); gift cards need no personal data.
-  res.json({ network: NETWORK, explorerBase: EXPLORER, tsuki: shop, consoleSetup: setup, phoneMasked: maskPhone(process.env.OBORO_SHOP_PHONE), runs: shopRuns.slice(0, 10) });
+  res.json({ network: NETWORK, explorerBase: EXPLORER, gateway: shop, consoleSetup: setup, phoneMasked: maskPhone(process.env.OBORO_SHOP_PHONE), runs: shopRuns.slice(0, 10) });
 });
 
 // Free catalog read through the mixnet, cached for a minute: the Shop page's live quote before any errand.
 let quoteCache: { at: number; body?: unknown; mixMs?: number; error?: string } = { at: 0 };
 app.get('/api/shop/quote', async (_req, res) => {
   if (Date.now() - quoteCache.at < 60_000 && (quoteCache.body || quoteCache.error)) return res.json({ ...quoteCache, cached: true });
-  const tsuki = await sellerNymAddress();
-  if (!tsuki) return res.status(412).json({ error: 'Setup required: Tsuki’s gate is not running (no Nym address)' });
+  const gateway = await sellerNymAddress();
+  if (!gateway) return res.status(412).json({ error: 'Setup required: gateway’s gate is not running (no Nym address)' });
   try {
-    const q = await viaNym(tsuki, '/v1/shop/product/swiggy-money-india');
+    const q = await viaNym(gateway, '/v1/shop/product/swiggy-money-india');
     quoteCache = q.status === 200 ? { at: Date.now(), body: q.body, mixMs: q.mixMs } : { at: Date.now(), error: String(q.body.error ?? `HTTP ${q.status}`) };
   } catch (e) {
     quoteCache = { at: Date.now(), error: errMsg(e) };
@@ -293,34 +293,34 @@ export async function launchShopRun(productIdIn: unknown, valueIn: unknown, by: 
   const productId = String(productIdIn ?? 'swiggy-money-india');
   const value = String(valueIn ?? '50');
   if (!/^[a-z0-9-]{1,100}$/.test(productId) || !/^(?:\d+(?:\.\d+)?|[\w .+/–-]{1,80})$/.test(value)) return { status: 400, error: 'product_id and a package value are required' };
-  if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return { status: 409, error: 'Kumo is already paying for something' };
+  if (runs.some((r) => r.status === 'running') || shopRuns.some((r) => r.status === 'running')) return { status: 409, error: 'agent wallet is already paying for something' };
   const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
   if (!buyerDir) return { status: 412, error: 'Setup required: OBORO_BUYER_WALLET_DIR' };
   const topUp = productId === 'airtel-india' || /-bundles(-india)?$|-india-bundles$/.test(productId);
   const phone = topUp ? process.env.OBORO_SHOP_PHONE : undefined;
   if (topUp && !phone) return { status: 412, error: 'Setup required: a phone number for the top-up (Setup card)' };
-  const tsuki = await sellerNymAddress();
-  if (!tsuki) return { status: 412, error: 'Setup required: Tsuki’s gate is not running (no Nym address)' };
+  const gateway = await sellerNymAddress();
+  if (!gateway) return { status: 412, error: 'Setup required: gateway’s gate is not running (no Nym address)' };
 
   const run: ShopRun = { id: randomUUID(), startedAt: new Date().toISOString(), status: 'running', by, phoneMasked: maskPhone(phone), steps: [] };
   shopRuns.unshift(run);
-  void runShop(run, tsuki, buyerDir, productId, value, phone);
+  void runShop(run, gateway, buyerDir, productId, value, phone);
   return { run, status: 200 };
 }
 
-async function runShop(run: ShopRun, tsuki: string, buyerDir: string, productId: string, value: string, phone: string | undefined) {
+async function runShop(run: ShopRun, gateway: string, buyerDir: string, productId: string, value: string, phone: string | undefined) {
   const push = (s: Omit<ShopStep, 'ts'>) => run.steps.push({ ts: new Date().toISOString(), ...s });
 
   try {
-    // 1. Browse Tsuki's catalog (free). Tsuki reads it from Bitrefill.
-    push({ type: 'browse', detail: `GET nym://Tsuki/v1/shop/search?q=${productId.split('-')[0]}` });
-    const search = await viaNym(tsuki, `/v1/shop/search?q=${encodeURIComponent(productId.split('-')[0])}`);
+    // 1. Browse gateway's catalog (free). gateway reads it from Bitrefill.
+    push({ type: 'browse', detail: `GET nym://gateway/v1/shop/search?q=${productId.split('-')[0]}` });
+    const search = await viaNym(gateway, `/v1/shop/search?q=${encodeURIComponent(productId.split('-')[0])}`);
     if (search.status !== 200) throw new Error(`Catalog search failed: ${String(search.body.error ?? search.status)}`);
     const found = (search.body.products as { id: string; name: string; in_stock: boolean }[] | undefined) ?? [];
     push({ type: 'browsed', mixMs: search.mixMs, detail: `${found.length} Bitrefill products; ${found.some((p) => p.id === productId) ? `${productId} in the list` : `${productId} not in the first page`}` });
 
     // 2. Quote: the package's USD price comes from Bitrefill, never from the request.
-    const quote = await viaNym(tsuki, `/v1/shop/product/${productId}`);
+    const quote = await viaNym(gateway, `/v1/shop/product/${productId}`);
     if (quote.status !== 200) throw new Error(`Product lookup failed: ${String(quote.body.error ?? quote.status)}`);
     const pkgs = (quote.body.packages as { value: string; usd: number; currency: string }[] | undefined) ?? [];
     const pkg = pkgs.find((p) => String(p.value) === value);
@@ -329,47 +329,47 @@ async function runShop(run: ShopRun, tsuki: string, buyerDir: string, productId:
     run.product = { id: productId, name: String(quote.body.name ?? productId), value, currency: pkg.currency || String(quote.body.currency ?? ''), usd: pkg.usd };
     push({ type: 'quoted', usd: pkg.usd, mixMs: quote.mixMs, detail: `${run.product.name}: ${value} ${run.product.currency} = $${pkg.usd.toFixed(2)} (Bitrefill price)` });
 
-    // 3. Pay Tsuki in shielded ZEC over Nym; the paid POST is the purchase authorisation.
-    const agent = createAgent({
+    // 3. Pay gateway in shielded ZEC over Nym; the paid POST is the purchase authorisation.
+    const agent = createWallet({
       tunnelUrl: TUNNEL,
       wallet: new ZingoWallet({ dataDir: buyerDir, chain: CHAIN }),
-      policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [tsuki] },
+      policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [gateway] },
       spendFile: SPEND_FILE,
       onEvent: (e: AgentEvent) => {
         switch (e.type) {
-          case 'payment_required': return push({ type: 'payment_required', zats: e.amountZats, detail: 'Tsuki asks for a shielded payment to authorise the purchase' });
-          case 'policy_ok': return push({ type: 'policy_ok', zats: e.amountZats, detail: `Kumo’s policy: ≤ ${MAX_PER.toLocaleString('en-US')} zats per call, ${DAILY.toLocaleString('en-US')} per day, Tsuki only` });
+          case 'payment_required': return push({ type: 'payment_required', zats: e.amountZats, detail: 'gateway asks for a shielded payment to authorise the purchase' });
+          case 'policy_ok': return push({ type: 'policy_ok', zats: e.amountZats, detail: `agent wallet’s policy: ≤ ${MAX_PER.toLocaleString('en-US')} zats per call, ${DAILY.toLocaleString('en-US')} per day, gateway only` });
           case 'policy_refused': return push({ type: 'policy_refused', detail: e.reason });
           case 'paying': return push({ type: 'paying', zats: e.amountZats, detail: 'zingo-cli quicksend, broadcast over the Nym mixnet' });
           case 'paid': run.txid = e.txid; return push({ type: 'paid', txid: e.txid, detail: `txid ${e.txid.slice(0, 16)}…` });
-          case 'pending': if (run.steps[run.steps.length - 1]?.type === 'pending') return; return push({ type: 'pending', detail: 'Waiting for Tsuki’s viewing key to see the mined note (NU7 blocks ≈ 25 s)' });
-          case 'settled': return push({ type: 'settled', detail: 'Tsuki verified amount, memo and nonce; txid reserved before any Bitrefill call' });
+          case 'pending': if (run.steps[run.steps.length - 1]?.type === 'pending') return; return push({ type: 'pending', detail: 'Waiting for gateway’s viewing key to see the mined note (NU7 blocks ≈ 25 s)' });
+          case 'settled': return push({ type: 'settled', detail: 'gateway verified amount, memo and nonce; txid reserved before any Bitrefill call' });
           default: return;
         }
       },
     });
-    push({ type: 'request', detail: `POST nym://Tsuki/v1/shop/buy {${productId}, ${value}${phone ? ', phone' : ''}}` });
-    const buy = await agent.fetch(`nym://${tsuki}/v1/shop/buy`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ product_id: productId, value, ...(phone ? { phone_number: phone } : {}) }) });
+    push({ type: 'request', detail: `POST nym://gateway/v1/shop/buy {${productId}, ${value}${phone ? ', phone' : ''}}` });
+    const buy = await agent.fetch(`nym://${gateway}/v1/shop/buy`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ product_id: productId, value, ...(phone ? { phone_number: phone } : {}) }) });
     let body = (await buy.json().catch(() => ({}))) as Record<string, unknown>;
     let status = buy.status;
-    push({ type: 'bitrefill', status, detail: status === 200 ? 'Bitrefill invoice paid from Tsuki’s balance; order delivered' : `Tsuki answered ${status} ${String(body.status ?? body.code ?? '')}` });
+    push({ type: 'bitrefill', status, detail: status === 200 ? 'Bitrefill invoice paid from gateway’s balance; order delivered' : `gateway answered ${status} ${String(body.status ?? body.code ?? '')}` });
 
     // 4. Long fulfilment or a parked over-cap purchase: poll the receipt (free, bearer receipt id) over Nym.
-    //    needs_approval waits (up to 30 min) for a human on Tsuki's side; nothing is bought until then.
+    //    needs_approval waits (up to 30 min) for a human on gateway's side; nothing is bought until then.
     const deadline = Date.now() + 30 * 60_000;
     while (status === 202 && (body.status === 'processing' || body.status === 'needs_approval') && (body.receipt_id || run.receiptId) && Date.now() < deadline) {
       run.receiptId = String(body.receipt_id ?? run.receiptId);
       if (body.status === 'needs_approval') {
         if (body.approval_id) approvals.set(run.id, String(body.approval_id));
-        if (run.status !== 'needs_approval') { run.status = 'needs_approval'; push({ type: 'needs_approval', detail: 'Above Tsuki’s caps: parked, nothing bought. Waiting for a human on Tsuki’s side to approve.' }); }
+        if (run.status !== 'needs_approval') { run.status = 'needs_approval'; push({ type: 'needs_approval', detail: 'Above gateway’s caps: parked, nothing bought. Waiting for a human on gateway’s side to approve.' }); }
       } else {
-        if (run.status === 'needs_approval') { run.status = 'running'; push({ type: 'approved', detail: 'Approved by Tsuki’s operator; Bitrefill order placed' }); }
+        if (run.status === 'needs_approval') { run.status = 'running'; push({ type: 'approved', detail: 'Approved by gateway’s operator; Bitrefill order placed' }); }
         if (run.steps[run.steps.length - 1]?.type !== 'processing') push({ type: 'processing', detail: 'Bitrefill order processing; polling the receipt over Nym' });
       }
       await new Promise((r) => setTimeout(r, 5000));
-      const r = await viaNym(tsuki, `/v1/shop/receipt/${run.receiptId}`);
+      const r = await viaNym(gateway, `/v1/shop/receipt/${run.receiptId}`);
       status = r.status; body = r.body;
-      if (status === 200 && run.status === 'needs_approval') { run.status = 'running'; push({ type: 'approved', detail: 'Approved by Tsuki’s operator; Bitrefill order placed' }); }
+      if (status === 200 && run.status === 'needs_approval') { run.status = 'running'; push({ type: 'approved', detail: 'Approved by gateway’s operator; Bitrefill order placed' }); }
     }
     if (status === 200 && body.status === 'delivered') {
       run.status = 'delivered';
@@ -404,12 +404,12 @@ app.post('/api/shop/run', async (req, res) => {
 });
 
 
-// Chat with Kumo: an LLM that shops through Oboro's tools (all over Nym). Its only way to spend is launchShopRun.
-const kumo = createKumo({
+// Chat with agent wallet: an LLM that shops through Oboro's tools (all over Nym). Its only way to spend is launchShopRun.
+const wallet = createChatAgent({
   viaNym: async (path) => {
-    const tsuki = await sellerNymAddress();
-    if (!tsuki) throw new Error('Tsuki’s gate is not running');
-    return viaNym(tsuki, path);
+    const gateway = await sellerNymAddress();
+    if (!gateway) throw new Error('gateway’s gate is not running');
+    return viaNym(gateway, path);
   },
   launchShopRun: (productId, value) => launchShopRun(productId, value, 'agent'),
   shopRun: (id) => shopRuns.find((r) => r.id === id),
@@ -418,11 +418,11 @@ const kumo = createKumo({
 let chatBusy = false;
 app.post('/api/agent/chat', async (req, res) => {
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-  if (!message) return res.status(400).json({ error: 'Say something to Kumo' });
-  if (chatBusy) return res.status(409).json({ error: 'Kumo is still thinking about the last message' });
+  if (!message) return res.status(400).json({ error: 'Say something to agent wallet' });
+  if (chatBusy) return res.status(409).json({ error: 'agent wallet is still thinking about the last message' });
   chatBusy = true;
   try {
-    res.json(await kumo.chat(String(req.body?.sessionId ?? ''), message));
+    res.json(await wallet.chat(String(req.body?.sessionId ?? ''), message));
   } catch (e) {
     res.status(502).json({ error: errMsg(e) });
   } finally {
@@ -448,7 +448,7 @@ app.post('/api/operator/approve', async (req, res) => {
 });
 
 // Setup card: the operator pastes the Bitrefill key and phone here (localhost only). They go straight into the
-// gitignored .env (mode 600) and are never echoed back; Tsuki is restarted so its Bitrefill client picks them up.
+// gitignored .env (mode 600) and are never echoed back; gateway is restarted so its Bitrefill client picks them up.
 app.post('/api/setup/shop', async (req, res) => {
   const ip = req.socket.remoteAddress ?? '';
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return res.status(403).json({ error: 'Setup is local only' });
@@ -467,20 +467,20 @@ app.post('/api/setup/shop', async (req, res) => {
   }
   writeFileSync(envFile, lines.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 });
   chmodSync(envFile, 0o600);
-  const restarted = updates.BITREFILL_API_KEY || updates.OBORO_BITREFILL_LIVE_BUY ? restartTsuki() : false;
-  res.json({ saved: Object.keys(updates), restartedTsuki: restarted });
+  const restarted = updates.BITREFILL_API_KEY || updates.OBORO_BITREFILL_LIVE_BUY ? restartGateway() : false;
+  res.json({ saved: Object.keys(updates), restartedGateway: restarted });
 });
 
-function restartTsuki(): boolean {
+function restartGateway(): boolean {
   const pidsFile = join(repo, '.oboro/pids');
   if (!existsSync(pidsFile)) return false;
   const rows = readFileSync(pidsFile, 'utf8').trim().split('\n').map((l) => l.split(' '));
-  const old = rows.find((r) => r[1] === 'tsuki');
+  const old = rows.find((r) => r[1] === 'gateway');
   if (old) { try { execFileSync('pkill', ['-TERM', '-P', old[0]]); } catch { /* no children */ } try { process.kill(Number(old[0])); } catch { /* gone */ } }
-  const log = openSync(join(repo, '.oboro/logs/tsuki.log'), 'a', 0o600);
+  const log = openSync(join(repo, '.oboro/logs/gateway.log'), 'a', 0o600);
   const child = spawn('pnpm', ['--filter', '@oboro/agents', 'exec', 'tsx', 'src/seller.ts'], { cwd: repo, env: process.env, detached: true, stdio: ['ignore', log, log] });
   child.unref();
-  writeFileSync(pidsFile, [...rows.filter((r) => r[1] !== 'tsuki'), [String(child.pid), 'tsuki']].map((r) => r.join(' ')).join('\n') + '\n');
+  writeFileSync(pidsFile, [...rows.filter((r) => r[1] !== 'gateway'), [String(child.pid), 'gateway']].map((r) => r.join(' ')).join('\n') + '\n');
   return true;
 }
 
