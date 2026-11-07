@@ -1,23 +1,31 @@
-# Oboro 朧: the private wallet for AI agents
+# Oboro 朧: private payments infrastructure
 
-**A private wallet SDK for AI agents: it pays APIs and buys real goods in shielded Zcash, routes every request and
-payment through the Nym mixnet, and holds anything over budget for a human.**
+**A wallet SDK, a merchant gateway and commerce connectors that pay in shielded Zcash over the Nym mixnet, plus a
+wallet app where a person keeps the budget.**
 
-Oboro is a private wallet any AI agent can drop in. A developer adds one SDK (or the MCP server) and the agent can pay
+Oboro is infrastructure for private payments by software. A developer adds one SDK and any app, agent or store can pay
 for APIs over x402 and buy real goods, like phone recharges and grocery credit, in shielded Zcash. Every request, 402
-challenge and payment crosses the Nym mixnet, so the seller never sees the agent's IP, Nym address or wallet. Before
-each spend the wallet checks its policy (payee, per-payment cap, daily cap). Over-budget purchases wait for a human,
-and the agent has no tool that can approve them. Merchants accept it with one gateway that verifies payments with a
-viewing key and has no public port. Real-world fulfilment runs through a commerce connector; Bitrefill is the first.
+challenge and payment crosses the Nym mixnet, so the merchant never sees the payer's IP, Nym address or wallet. Before
+each spend the wallet checks its policy (payee, per-payment cap, daily cap); anything over a limit waits for a person in
+the wallet app. Merchants accept payments with one gateway that verifies with a viewing key and has no public port.
+Real-world fulfilment runs through commerce connectors; Bitrefill is the first.
 
-| Layer | What it is | Package |
+Agents are not the product: they are clients of the wallet. `examples/` has three of them, built only on the SDK.
+
+| Layer | What it is | Where |
 |---|---|---|
-| **Wallet SDK** | `createWallet()`: x402 `fetch` over Nym, spend policy, budget, `merchant(addr)` to search, buy and get receipts | `oboro` |
-| **Merchant gateway** | `createGateway()`: x402 paywall that verifies with a viewing key; the server has no public port | `oboro` |
-| **Commerce connectors** | `CommerceConnector` interface; `bitrefillConnector()` for recharges, gift cards and top-ups, with caps and human approval | `@oboro/shop` |
-| **MCP server** | Any MCP model (Claude, Cursor…) gets the wallet as tools: pay, budget, search, buy, receipt | `@oboro/mcp` |
-| **Nym transport** | `tunnel` (agent side) and `gate` (merchant side) carry HTTP through the mixnet | `oboro-node` (Rust, nym-sdk 1.22.3) |
-| **Wallet app** | Where a human sees the agent's balance, budget, activity, approvals and a "who saw what" receipt, and talks to the agent | `apps/dashboard` |
+| **Wallet SDK** | `createWallet()`: x402 `fetch` over Nym, spend policy, budget, `merchant(addr)` to search, buy and get receipts | `packages/sdk` (`oboro`) |
+| **Merchant gateway** | `createGateway()`: x402 paywall that verifies with a viewing key; the reference gateway server has no public port | `packages/sdk`, `apps/gateway` |
+| **Commerce connectors** | `CommerceConnector` interface; `bitrefillConnector()` for recharges, gift cards and top-ups, with caps and approval | `packages/shop` (`@oboro/shop`) |
+| **MCP server** | Any MCP host (Claude, Cursor…) gets the wallet as eight tools | `packages/mcp` (`@oboro/mcp`) |
+| **Nym transport** | `tunnel` (payer side) and `gate` (merchant side) carry HTTP through the mixnet | `crates/oboro-node` (Rust, nym-sdk 1.22.3) |
+| **Wallet app** | Balance, budget, approvals, activity and a "who saw what" receipt, for the person whose money it is | `apps/wallet` |
+
+| Example (built on the SDK) | What it shows | Where |
+|---|---|---|
+| **Shopping agent** | An LLM with five tools, each one SDK call (`shop.rules/search/product/buy/receipt`); over a limit it asks you. Try it in the wallet app at `#/examples`, or run `cli.ts` in a terminal. | `examples/shopping-agent` |
+| **Paid-API agent** | A short script that pays an x402 API per call and decides whether the next call is worth it | `examples/paid-api-agent` |
+| **MCP client** | Claude Desktop config for `@oboro/mcp` | `examples/mcp-client` |
 
 ```ts
 import { createWallet, ZingoWallet } from 'oboro';
@@ -29,13 +37,13 @@ const wallet = createWallet({
 });
 
 await wallet.fetch(`nym://${MERCHANT}/v1/intel/tip`);            // pays an x402 API, privately
-await wallet.merchant(MERCHANT).buy({                           // buys a real phone recharge
-  product_id: 'reliance-jio-india-bundles', value: '6GB – 7 Day Data Pack', phone_number: '+91…',
-});
+const shop = wallet.merchant(MERCHANT);                         // a merchant's commerce routes, over Nym
+await shop.buy({ product_id: 'swiggy-money-india', value: '50' }); // buys a real Swiggy Money card
 ```
 
-Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026. In the recorded runs below, "the agent" is an LLM agent
-holding an Oboro wallet and "the gateway" is a merchant running the Oboro gateway with the Bitrefill connector.
+Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026; restructured into infrastructure + examples on 7 and 8 Nov
+(see the commit history). In the recorded runs below, "the agent" is the example shopping agent holding an Oboro wallet
+and "the gateway" is a merchant running the Oboro gateway with the Bitrefill connector.
 
 ## Tracks: entered in Both
 
@@ -93,8 +101,8 @@ the gateway's gate logged each request as `sender: SURB reply tag only (no IP, n
 
 ## Agentic Commerce: the Bitrefill purchases
 
-**Talk to the agent.** The Shop page (`#/shop`) is a chat with the agent, an LLM agent (Claude Haiku 5.5 via OpenRouter,
-`apps/dashboard/agent.ts`) whose only tools are Oboro's: `shop_rules`, `search_products`, `get_product`, `buy` and
+**Talk to the agent.** The example agent page (`#/examples`; it was the Shop page on 4 Nov) is a chat with the example
+shopping agent, an LLM (Claude Haiku 5.5 via OpenRouter, `examples/shopping-agent/agent.ts`) whose only tools are Oboro's: `shop_rules`, `search_products`, `get_product`, `buy` and
 `check_purchase`, each reaching the gateway over Nym. Recorded live at 16:27 IST:
 - *"What can you buy me for under a dollar?"* the agent reads the gateway's rules and four live Bitrefill prices through the
   mixnet (2.0 to 4.3 s each) and lists Swiggy, Flipkart, Google Play and Uber at ₹50.
@@ -157,7 +165,7 @@ Bitrefill's catalog, invoices and delivery, unchanged.
   `OBORO_SHOP_ALLOW`; prices always come from Bitrefill, never from the request.
 - **Above that:** nothing is bought. The purchase is parked as `needs_approval`. A human approves it on the merchant's side,
   either with the Shop page's operator **Approve** button (local-only `POST /api/operator/approve`) or with
-  `pnpm --filter @oboro/agents shop:approve <approval_id>`. No tool the agent can call approves anything. (Live:
+  `pnpm --filter @oboro/gateway shop:approve <approval_id>`. No tool the agent can call approves anything. (Live:
   invoice `c0d4eacc…`, above.)
 - **Replays:** one purchase per authorising Zcash txid, reserved in a mode-600 ledger **before** `POST /invoices`, so a
   crash or a replayed payment can't buy twice.
@@ -248,17 +256,17 @@ testnet wallets (Ironwood): one for the agent, one for the gateway. Any Zcash me
 pnpm install
 cargo build --release --manifest-path crates/Cargo.toml      # oboro-node (~4 min)
 cp .env.example .env                                         # fill in the wallet dirs and zingo-cli path
-OBORO_SELLER_VIEW_BIRTHDAY=<recent height> pnpm --filter @oboro/agents setup:seller   # view-only wallet for the gateway
-scripts/up.sh                                                # the gateway, the gateway's gate, the agent's tunnel, console
-open http://127.0.0.1:7430/#/console                         # press a Buy button
+OBORO_SELLER_VIEW_BIRTHDAY=<recent height> pnpm --filter @oboro/gateway setup:gateway  # view-only wallet for the gateway
+scripts/up.sh                                                # gateway, its Nym gate, the wallet's Nym tunnel, wallet app
+open http://127.0.0.1:7430/#/wallet                          # the wallet app; #/examples for the example agent
 scripts/down.sh
 ```
 
-Headless instead of the console: `pnpm --filter @oboro/agents buyer --once <the gateway's Nym address>`.
-MCP: point any MCP client at `node packages/mcp/dist/index.js` with `OBORO_TUNNEL_URL`, `OBORO_SELLER_NYM_ADDRESS` and
-`OBORO_BUYER_WALLET_DIR` set; tools `oboro_fetch`, `oboro_budget`, `oboro_status`.
+Examples from a terminal: `pnpm --filter @oboro/example-paid-api-agent start -- --once <the gateway's Nym address>` and
+`pnpm --filter @oboro/example-shopping-agent start` (a chat in the terminal, using `wallet.merchant()` directly).
+MCP: see [examples/mcp-client](examples/mcp-client) for a Claude Desktop config (env var names only).
 
-Tests: `pnpm -r test` (57 SDK, 22 shop, 2 MCP, 1 agents unit tests), `cargo test --manifest-path crates/Cargo.toml` (6 unit tests),
+Tests: `pnpm -r test` (57 SDK, 22 shop, 2 MCP, 1 gateway, 5 example-agent unit tests), `cargo test --manifest-path crates/Cargo.toml` (6 unit tests),
 live mixnet round trip `cargo test --manifest-path crates/Cargo.toml --test live_roundtrip -- --ignored` (real Nym
 mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTING.md), [crates/RESULT.md](crates/RESULT.md).
 
@@ -270,8 +278,11 @@ mainnet mixnet, no mocks). Details and the recorded results: [TESTING.md](TESTIN
 | `packages/sdk` (`oboro`) | TypeScript. `createWallet` (x402 client, spend policy, budget, merchant client), `createGateway` (x402 server), zingo wallet + view-key verifier |
 | `packages/shop` (`@oboro/shop`) | `CommerceConnector` interface and `bitrefillConnector()`: Bitrefill REST v2 worker, CLI catalog, guardrails, txid-deduped ledger |
 | `packages/mcp` (`@oboro/mcp`) | MCP server: `oboro_fetch`, `oboro_budget`, `oboro_status`, `oboro_shop_search`, `_product`, `_buy`, `_receipt` |
-| `apps/agents` | The gateway (seller, with the shop routes) and the agent (buyer), setup, demo and `shop:approve` scripts |
-| `apps/dashboard` | Landing page, API console, Shop page and the console server |
+| `apps/gateway` | Reference merchant gateway: x402 routes, the Bitrefill shop routes, setup and `shop:approve` scripts |
+| `apps/wallet` | Wallet app (balance, budget, approvals, activity), example agent page, developer console, landing, and its server |
+| `examples/shopping-agent` | Example: LLM shopping agent on `wallet.merchant()` (`agent.ts`, `cli.ts`, 5 tests) |
+| `examples/paid-api-agent` | Example: a script that pays an x402 API per call |
+| `examples/mcp-client` | Example: Claude Desktop config for `@oboro/mcp` |
 | `scripts/up.sh`, `down.sh`, `restart.sh` | Start, stop and restart the stack |
 
 ## Design decisions

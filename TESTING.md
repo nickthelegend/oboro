@@ -4,12 +4,12 @@ Node 26, pnpm, strict TypeScript, ESM, Vitest. Install with `pnpm install`.
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm -r test` | 57 SDK unit tests (incl. `createWallet` budget and merchant client, `createGateway`), 22 shop tests (incl. the `bitrefillConnector` interface), 2 MCP tests and 1 agents test; 3 live SDK and 2 live shop tests skip unless enabled |
-| `pnpm -r build` | Compile all three TypeScript packages |
-| `pnpm -r typecheck` | Strict typecheck all three packages |
-| `pnpm --filter @oboro/agents setup:seller` | Export the seller UFVK to `.oboro/seller.ufvk` and create a view-only wallet; both files stay ignored and mode 600 |
-| `OBORO_LIVE=1 bash apps/agents/scripts/live-sdk.sh` | Load ignored `.env`, read the actual buyer balance, and find a historical receipt in the seller view wallet |
-| `OBORO_LIVE=1 bash apps/agents/scripts/demo.sh` | Paid end-to-end demo; run once only when `OBORO_NODE_BIN` exists |
+| `pnpm -r test` | 57 SDK unit tests (incl. `createWallet` budget and merchant client, `createGateway`), 22 shop tests (incl. the `bitrefillConnector` interface), 2 MCP tests, 1 gateway test and 5 example shopping-agent tests (fake shop handle and fake model: refusal before payment, over-limit only after an explicit yes, traces, unknown tool, bad JSON); 3 live SDK and 2 live shop tests skip unless enabled |
+| `pnpm -r build` | Compile every package, app and example |
+| `pnpm -r typecheck` | Strict typecheck every package, app and example |
+| `pnpm --filter @oboro/gateway setup:gateway` | Export the seller UFVK to `.oboro/seller.ufvk` and create a view-only wallet; both files stay ignored and mode 600 |
+| `OBORO_LIVE=1 bash apps/gateway/scripts/live-sdk.sh` | Load ignored `.env`, read the actual buyer balance, and find a historical receipt in the seller view wallet |
+| `OBORO_LIVE=1 bash apps/gateway/scripts/demo.sh` | Paid end-to-end demo; run once only when `OBORO_NODE_BIN` exists |
 
 The pure tests exercise Nym URL case preservation, x402 challenge and payment headers, policy checks before wallet access, persisted daily spend, paywall nonce and txid replay, expiry, pending, wrong memo, insufficient amount, error codes, and parsing of redacted shapes captured from the seller wallet's offline `messages`, `value_transfers`, and `balance` output. The agent and paywall unit tests simulate only the protocol state machine. They make no live-chain claim.
 
@@ -31,6 +31,6 @@ Limits: zingo's `sync status` reports the wallet's scanned range and percentage,
 
 `packages/shop/test/shop.test.ts` covers captured real Bitrefill CLI search/details JSON, allow-list and cap decisions, out-of-stock refusal, atomic mode-600 ledger writes, replay refusal, phone/code masking, invoice versus order status, failure paths, and the 429 backoff schedule. These are pure tests and never buy.
 
-`apps/agents/src/shop-routes.test.ts` checks that the free shop dashboard never exposes a receipt bearer token, approval ID, full phone, or unmasked code.
+`apps/gateway/src/shop-routes.test.ts` checks that the free shop dashboard never exposes a receipt bearer token, approval ID, full phone, or unmasked code.
 
 `OBORO_SHOP_LIVE_CATALOG=1 pnpm --filter @oboro/shop test` runs the no-key CLI search/details against the real Airtel India catalog and prints package denominations and USD prices. The key-only test calls `ping` and `balance` if `BITREFILL_API_KEY` is present; otherwise it skips with “Setup required: BITREFILL_API_KEY.” Neither live test creates an invoice.
