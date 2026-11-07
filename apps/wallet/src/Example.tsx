@@ -135,7 +135,7 @@ function ChatPane() {
                 <span className="msg-avatar" aria-hidden="true"><Logo size={22} /></span>
                 <div className="msg-body">
                   {t.tools && t.tools.length > 0 && <ToolCalls tools={t.tools} />}
-                  <p>{t.text}</p>
+                  <p>{t.text.split(/\*\*(.+?)\*\*/g).map((part, k) => (k % 2 ? <strong key={k}>{part}</strong> : part))}</p>
                   {t.runId && <PurchaseCard run={shop?.runs.find((r) => r.id === t.runId)} />}
                 </div>
               </div>

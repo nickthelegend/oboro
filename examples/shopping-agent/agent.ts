@@ -35,7 +35,7 @@ const SYSTEM = `You are an example shopping agent built on the Oboro wallet SDK.
  If over cap, explain that nothing is bought until the gateway operator approves. Only after the owner explicitly
  confirms an over-cap request may you set request_approval=true. You cannot approve it yourself.
  Purchases take minutes; report progress through check_purchase. Never ask for codes, cards or secrets.
- Reply in one to three short, concrete sentences, with prices in both ₹ and $.`;
+ Reply in one to three short, concrete sentences of plain text (no markdown), with prices in ₹ and $.`;
 const tool = (name: string, description: string, properties: Record<string, unknown> = {}, required: string[] = []) =>
   ({ type: 'function' as const,
     function: { name, description, parameters: { type: 'object', properties, required } } });
@@ -68,7 +68,7 @@ async function openRouter(messages: Message[], tools: typeof TOOLS): Promise<Mes
     method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json',
       'X-Title': 'Oboro example shopping agent' },
     body: JSON.stringify({ model: process.env.OBORO_AGENT_MODEL ?? 'anthropic/claude-haiku-5.5',
-      max_tokens: 500, messages, tools, tool_choice: 'auto' }), signal: AbortSignal.timeout(90_000),
+      max_tokens: 1200, messages, tools, tool_choice: 'auto' }), signal: AbortSignal.timeout(90_000),
   });
   const body = await res.json() as { choices?: { message: Message }[]; error?: { message?: string } };
   if (!res.ok || !body.choices?.[0]) throw new Error(`Model error: ${body.error?.message ?? res.status}`);

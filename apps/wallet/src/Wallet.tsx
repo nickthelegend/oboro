@@ -57,8 +57,16 @@ export function Wallet() {
   const pct = cap ? Math.min(100, (spent / cap) * 100) : 0;
   const unit = chainName() === 'mainnet' ? 'ZEC' : 'TAZ';
 
+  // A purchase is paid by one x402 call to /v1/shop/buy: show it once, with the full txid from the payment ledger.
+  const payments = state?.gateway.ledger ?? [];
+  const fullTx = (masked: string) => {
+    const [a, b] = masked.split('…');
+    return payments.find((r) => r.txid && b !== undefined && r.txid.startsWith(a) && r.txid.endsWith(b))?.txid;
+  };
+  const buys = (shop?.gateway.ledger ?? []).map((p) => ({ ...p, fullTxid: fullTx(p.txid) }));
+  const buyTx = new Set(buys.map((b) => b.fullTxid).filter(Boolean));
   const activity: Activity[] = [
-    ...(shop?.gateway.ledger ?? []).map((p) => ({
+    ...buys.map((p) => ({
       key: `b-${p.txid}-${p.created_at}`,
       kind: 'buy' as const,
       title: `${productName(p.product_id)} · ₹${p.value}`,
@@ -66,18 +74,20 @@ export function Wallet() {
       amount: `$${p.usd.toFixed(2)}`,
       status: p.status,
       at: p.created_at,
-      txid: p.txid,
+      txid: p.fullTxid,
     })),
-    ...(state?.gateway.ledger ?? []).map((r) => ({
-      key: `a-${r.txid}`,
-      kind: 'api' as const,
-      title: `Paid API call · ${r.path}`,
-      sub: 'x402 over the Nym mixnet',
-      amount: `${r.priceZats.toLocaleString('en-US')} zats`,
-      status: r.status,
-      at: r.ts,
-      txid: r.txid,
-    })),
+    ...payments
+      .filter((r) => !buyTx.has(r.txid))
+      .map((r) => ({
+        key: `a-${r.txid}`,
+        kind: 'api' as const,
+        title: `Paid API call · ${r.path}`,
+        sub: 'x402 over the Nym mixnet',
+        amount: `${r.priceZats.toLocaleString('en-US')} zats`,
+        status: r.status,
+        at: r.ts,
+        txid: r.txid,
+      })),
   ]
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 10);
