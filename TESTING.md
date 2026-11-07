@@ -4,7 +4,7 @@ Node 26, pnpm, strict TypeScript, ESM, Vitest. Install with `pnpm install`.
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm -r test` | 43 SDK unit tests, 20 shop tests, and 1 MCP tool registration test; 3 live SDK tests skip unless `OBORO_LIVE=1` |
+| `pnpm -r test` | 57 SDK unit tests (incl. `createWallet` budget and merchant client, `createGateway`), 22 shop tests (incl. the `bitrefillConnector` interface), 2 MCP tests and 1 agents test; 3 live SDK and 2 live shop tests skip unless enabled |
 | `pnpm -r build` | Compile all three TypeScript packages |
 | `pnpm -r typecheck` | Strict typecheck all three packages |
 | `pnpm --filter @oboro/agents setup:seller` | Export the seller UFVK to `.oboro/seller.ufvk` and create a view-only wallet; both files stay ignored and mode 600 |
