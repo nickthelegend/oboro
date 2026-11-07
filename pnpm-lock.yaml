@@ -21,7 +21,7 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.19.2)(tsx@4.23.15)
 
-  apps/agents:
+  apps/gateway:
     dependencies:
       '@oboro/shop':
         specifier: workspace:*
@@ -40,8 +40,11 @@ importers:
         specifier: ^5.0.5
         version: 5.0.6
 
-  apps/dashboard:
+  apps/wallet:
     dependencies:
+      '@oboro/example-shopping-agent':
+        specifier: workspace:*
+        version: link:../../examples/shopping-agent
       express:
         specifier: ^5.1.0
         version: 5.3.0
@@ -76,6 +79,24 @@ importers:
       vite:
         specifier: ^7.2.2
         version: 7.3.7(@types/node@24.19.2)(tsx@4.23.15)
+
+  examples/paid-api-agent:
+    dependencies:
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.4.2
+      oboro:
+        specifier: workspace:*
+        version: link:../../packages/sdk
+
+  examples/shopping-agent:
+    dependencies:
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.4.2
+      oboro:
+        specifier: workspace:*
+        version: link:../../packages/sdk
 
   packages/mcp:
     dependencies:

@@ -1,5 +1,5 @@
 {
-  "name": "@oboro/dashboard",
+  "name": "@oboro/wallet-app",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,6 +14,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "oboro": "workspace:*",
+    "@oboro/example-shopping-agent": "workspace:*",
     "express": "^5.1.0"
   },
   "devDependencies": {

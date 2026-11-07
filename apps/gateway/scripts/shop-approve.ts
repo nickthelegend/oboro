@@ -3,7 +3,7 @@ import { ShopLedger, ShopError } from '@oboro/shop';
 import { repoPath } from '../src/env.js';
 
 const id = process.argv[2];
-if (!id) { console.error('Usage: pnpm --filter @oboro/agents shop:approve <approval_id>'); process.exitCode = 2; }
+if (!id) { console.error('Usage: pnpm --filter @oboro/gateway shop:approve <approval_id>'); process.exitCode = 2; }
 else {
   try {
     const ledger = new ShopLedger(repoPath(process.env.OBORO_SHOP_LEDGER ?? '.oboro/shop.json'));

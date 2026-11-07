@@ -43,21 +43,21 @@ export function Console() {
 
   return (
     <div className="page console-page">
-      <Nav console />
+      <Nav active="console" />
       <div className="console frame">
         <header className="console-head">
           <div>
             <span className="eyebrow">
               <span className={`dot ${state ? '' : 'dot-off'}`} /> Console · Zcash {chainName()} · Nym mainnet mixnet
             </span>
-            <h1 className="console-title">Your agent pays an API, in the dark.</h1>
+            <h1 className="console-title">Pay an API, in the dark.</h1>
           </div>
           <NodePills state={state} />
         </header>
 
         {offline && (
           <div className="banner banner-bad" role="alert">
-            <strong>Console server offline.</strong> Start it with <code>pnpm --filter @oboro/dashboard serve</code>.{' '}
+            <strong>Console server offline.</strong> Start it with <code>pnpm --filter @oboro/wallet-app serve</code>.{' '}
             <span className="mono fine">({offline})</span>
           </div>
         )}
@@ -75,8 +75,8 @@ export function Console() {
         <div className="console-grid">
           <AgentPanel
             who="wallet"
-            name="Agent wallet"
-            role="Your agent · oboro SDK"
+            name="Wallet"
+            role="Client · createWallet()"
             lines={[
               ['Wallet', state?.wallet.ok ? 'Shielded · local spending key' : (state?.wallet.error ?? '—')],
               ['Balance', state?.wallet.balanceZats !== undefined ? `${zec(state.wallet.balanceZats)} ${chainName() === 'mainnet' ? 'ZEC' : 'TAZ'}` : '—'],
@@ -115,7 +115,7 @@ export function Console() {
           <section className="veil-panel" aria-label="Request path through the mixnet">
             <div className="veil-stage">
               <div className="veil-cols" aria-hidden="true">
-                <span className="veil-node">Your agent</span>
+                <span className="veil-node">Your wallet</span>
                 {VEILS.map((v, i) => (
                   <span key={v} className="veil-col" style={{ ['--i' as string]: i }}>
                     <em>{v}</em>
@@ -125,7 +125,7 @@ export function Console() {
               </div>
               {active?.status === 'running' && <span className="packet" aria-hidden="true" />}
             </div>
-            {active ? <RunDetail run={active} /> : <p className="empty center">No payments yet. Pick an API for your agent to pay for.</p>}
+            {active ? <RunDetail run={active} /> : <p className="empty center">No payments yet. Pick an API for the wallet to pay for.</p>}
           </section>
 
           <AgentPanel

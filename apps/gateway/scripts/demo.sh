@@ -14,7 +14,7 @@ pids=()
 cleanup() { for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done; for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done; }
 trap cleanup EXIT INT TERM
 mkdir -p .oboro/gate .oboro/tunnel
-node apps/agents/dist/src/seller.js & pids+=("$!")
+node apps/gateway/dist/src/gateway.js & pids+=("$!")
 "$node_bin" gate --upstream http://127.0.0.1:7420 --data .oboro/gate --status 127.0.0.1:7411 & pids+=("$!")
 "$node_bin" tunnel --listen 127.0.0.1:7410 --data .oboro/tunnel & pids+=("$!")
 for i in {1..180}; do
@@ -23,4 +23,4 @@ for i in {1..180}; do
 done
 [[ -s .oboro/gate/address.txt ]] || { echo "Gate did not publish its Nym address" >&2; exit 1; }
 nym_address="${OBORO_SELLER_NYM_ADDRESS:-$(cat .oboro/gate/address.txt)}"
-node apps/agents/dist/src/buyer.js --once "$nym_address"
+pnpm --filter @oboro/example-paid-api-agent start "$nym_address"

@@ -1,0 +1,8 @@
+{
+  "name": "@oboro/example-paid-api-agent",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "tsx index.ts", "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json", "test": "vitest run --passWithNoTests" },
+  "dependencies": { "oboro": "workspace:*", "dotenv": "^17.2.3" }
+}

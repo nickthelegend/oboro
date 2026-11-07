@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { required, runZingo, ZingoWallet } from 'oboro';
 
 const input = process.argv[2];
-if (!input || process.argv.length !== 3) throw new Error('Usage: pnpm --filter @oboro/agents wallet:new <dir>');
+if (!input || process.argv.length !== 3) throw new Error('Usage: pnpm --filter @oboro/gateway wallet:new <dir>');
 if (process.env.OBORO_CHAIN !== undefined && process.env.OBORO_CHAIN !== 'testnet' && process.env.OBORO_CHAIN !== 'mainnet') throw new Error('OBORO_CHAIN must be testnet or mainnet');
 const chain = process.env.OBORO_CHAIN === 'mainnet' ? 'mainnet' : 'testnet';
 const dir = resolve(input);

@@ -1,4 +1,4 @@
-// Client for the Oboro console server (apps/dashboard/server.ts).
+// Client for the Oboro wallet server (apps/wallet/server.ts).
 // Everything shown in the UI comes from here; when the server or a node is down the UI says so.
 
 export type NodeStatus = {
@@ -154,7 +154,7 @@ export async function saveShopSetup(input: { apiKey?: string; phone?: string; li
 export type ToolTrace = { name: string; args: Record<string, unknown>; summary: string; ok: boolean; mixMs?: number };
 export type ChatTurn = { role: 'user' | 'assistant'; text: string; tools?: ToolTrace[]; runId?: string; at: string };
 export async function chatAgent(sessionId: string, message: string): Promise<{ sessionId: string; turns: ChatTurn[] }> {
-  const res = await fetch('/api/agent/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, message }) });
+  const res = await fetch('/api/examples/shopping-agent/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, message }) });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `agent wallet is unavailable (${res.status})`);
   return body;

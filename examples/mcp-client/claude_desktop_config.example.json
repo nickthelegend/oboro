@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "oboro": {
+      "command": "pnpm",
+      "args": ["--filter", "@oboro/mcp", "exec", "node", "dist/index.js"],
+      "env": {
+        "OBORO_BUYER_WALLET_DIR": "OBORO_BUYER_WALLET_DIR",
+        "OBORO_SELLER_NYM_ADDRESS": "OBORO_SELLER_NYM_ADDRESS",
+        "OBORO_TUNNEL_URL": "OBORO_TUNNEL_URL"
+      }
+    }
+  }
+}

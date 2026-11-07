@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { Landing } from './Landing';
 import { Console } from './Console';
-import { Shop } from './Shop';
+import { Wallet } from './Wallet';
+import { Example } from './Example';
+import './app.css';
 
 function useRoute() {
   const [hash, setHash] = useState(() => window.location.hash);
@@ -15,12 +17,18 @@ function useRoute() {
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
-  return hash.startsWith('#/console') ? 'console' : (hash.startsWith('#/wallet') || hash.startsWith('#/shop')) ? 'shop' : 'landing';
+  if (hash.startsWith('#/console')) return 'console';
+  if (hash.startsWith('#/wallet') || hash.startsWith('#/shop')) return 'wallet';
+  if (hash.startsWith('#/examples')) return 'examples';
+  return 'landing';
 }
 
 function App() {
   const route = useRoute();
-  return route === 'console' ? <Console /> : route === 'shop' ? <Shop /> : <Landing />;
+  if (route === 'console') return <Console />;
+  if (route === 'wallet') return <Wallet />;
+  if (route === 'examples') return <Example />;
+  return <Landing />;
 }
 
 createRoot(document.getElementById('root')!).render(

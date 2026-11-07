@@ -1,5 +1,5 @@
-// Oboro console server: the only backend the dashboard talks to.
-// It reads live status from the two oboro-node processes and gateway, and runs agent wallet (the buyer agent)
+// Oboro wallet server: the backend the wallet app talks to.
+// It reads live status from the two oboro-node processes and gateway, and runs the example agent
 // through the real SDK when you press a button. Nothing here is simulated: if a piece is down, /api/state says so.
 import express from 'express';
 import { chmodSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs';
@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createWallet, ZingoWallet, OboroError, type AgentEvent } from 'oboro';
-import { createChatAgent } from './agent.js';
+import { createShoppingAgent, type ShopHandle } from '@oboro/example-shopping-agent';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../..');
@@ -122,7 +122,7 @@ app.get('/api/state', async (_req, res) => {
   if (!process.env.OBORO_BUYER_WALLET_DIR) setup.push('OBORO_BUYER_WALLET_DIR (agent wallet)');
   if (tunnel.status === 'rejected') setup.push('oboro-node tunnel on 7410');
   if (gate.status === 'rejected') setup.push('oboro-node gate status on 7411');
-  if (ledger.status === 'rejected') setup.push('gateway (apps/agents seller) on 7420');
+  if (ledger.status === 'rejected') setup.push('gateway (apps/gateway) on 7420');
 
   const node = (r: PromiseSettledResult<Record<string, unknown>>) =>
     r.status === 'fulfilled'
@@ -379,7 +379,7 @@ async function runShop(run: ShopRun, gateway: string, buyerDir: string, productI
       push({ type: 'delivered', usd: Number(body.usd) || run.product.usd, detail: `Invoice ${run.invoiceId} · order ${run.orderId} delivered` });
     } else if (status === 202 && body.status === 'needs_approval') {
       run.status = 'needs_approval';
-      push({ type: 'needs_approval', detail: 'Above the caps: nothing bought. A human approves out of band with pnpm --filter @oboro/agents shop:approve <id>' });
+      push({ type: 'needs_approval', detail: 'Above the caps: nothing bought. A human approves out of band with pnpm --filter @oboro/gateway shop:approve <id>' });
     } else if (status === 202) {
       run.status = 'processing';
     } else {
@@ -404,30 +404,50 @@ app.post('/api/shop/run', async (req, res) => {
 });
 
 
-// Chat with agent wallet: an LLM that shops through Oboro's tools (all over Nym). Its only way to spend is launchShopRun.
-const wallet = createChatAgent({
-  viaNym: async (path) => {
+// The example agent uses a merchant handle backed by live Nym reads and the UI's existing purchase runner.
+async function shopRead<T>(path: string): Promise<T> {
     const gateway = await sellerNymAddress();
     if (!gateway) throw new Error('the merchant gateway’s Nym gate is not running');
-    return viaNym(gateway, path);
+    const response = await viaNym(gateway, path);
+    if (response.status !== 200) throw new Error(`gateway answered HTTP ${response.status}`);
+    return { ...response.body, mixMs: response.mixMs } as T;
+}
+const shop: ShopHandle = {
+  rules: () => shopRead('/oboro/shop'),
+  search: (query) => shopRead(`/v1/shop/search?q=${encodeURIComponent(query)}`),
+  product: (id) => shopRead(`/v1/shop/product/${encodeURIComponent(id)}`),
+  buy: async ({ product_id, value }) => {
+    const result = await launchShopRun(product_id, value, 'agent');
+    if (!result.run) throw new Error(result.error ?? `purchase failed (${result.status})`);
+    return { status: 'processing', receipt_id: result.run.id, run_id: result.run.id };
   },
-  launchShopRun: (productId, value) => launchShopRun(productId, value, 'agent'),
-  shopRun: (id) => shopRuns.find((r) => r.id === id),
-  budget: () => ({ balanceZats: balanceCache.zats, spentTodayZats: spentToday(), dailyCapZats: DAILY, maxPerRequestZats: MAX_PER }),
+  receipt: (id) => shopRead(`/v1/shop/receipt/${encodeURIComponent(id)}`),
+  progress: (id) => shopRuns.find((r) => r.id === id),
+};
+const exampleAgent = createShoppingAgent({
+  shop,
+  budget: () => ({ balanceZats: balanceCache.zats, spentTodayZats: spentToday(),
+    remainingTodayZats: Math.max(0, DAILY - spentToday()), dailyCapZats: DAILY, maxPerPaymentZats: MAX_PER }),
 });
 let chatBusy = false;
-app.post('/api/agent/chat', async (req, res) => {
+app.post('/api/examples/shopping-agent/chat', async (req, res) => {
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-  if (!message) return res.status(400).json({ error: 'Say something to agent wallet' });
-  if (chatBusy) return res.status(409).json({ error: 'agent wallet is still thinking about the last message' });
+  if (!message) return res.status(400).json({ error: 'Say something to the example agent' });
+  if (chatBusy) return res.status(409).json({ error: 'the example agent is still thinking about the last message' });
   chatBusy = true;
   try {
-    res.json(await wallet.chat(String(req.body?.sessionId ?? ''), message));
+    res.json(await exampleAgent.chat(String(req.body?.sessionId ?? ''), message));
   } catch (e) {
     res.status(502).json({ error: errMsg(e) });
   } finally {
     chatBusy = false;
   }
+});
+
+app.get('/api/examples/shopping-agent/source', (_req, res) => {
+  const source = readFileSync(join(repo, 'examples/shopping-agent/agent.ts'), 'utf8');
+  res.json({ file: 'examples/shopping-agent/agent.ts', lines: source.split('\n').length - Number(source.endsWith('\n')),
+    source });
 });
 
 // Operator approval for a parked over-cap purchase: a human presses Approve on this machine (local only).
@@ -478,7 +498,7 @@ function restartGateway(): boolean {
   const old = rows.find((r) => r[1] === 'gateway');
   if (old) { try { execFileSync('pkill', ['-TERM', '-P', old[0]]); } catch { /* no children */ } try { process.kill(Number(old[0])); } catch { /* gone */ } }
   const log = openSync(join(repo, '.oboro/logs/gateway.log'), 'a', 0o600);
-  const child = spawn('pnpm', ['--filter', '@oboro/agents', 'exec', 'tsx', 'src/seller.ts'], { cwd: repo, env: process.env, detached: true, stdio: ['ignore', log, log] });
+  const child = spawn('pnpm', ['--filter', '@oboro/gateway', 'exec', 'tsx', 'src/gateway.ts'], { cwd: repo, env: process.env, detached: true, stdio: ['ignore', log, log] });
   child.unref();
   writeFileSync(pidsFile, [...rows.filter((r) => r[1] !== 'gateway'), [String(child.pid), 'gateway']].map((r) => r.join(' ')).join('\n') + '\n');
   return true;

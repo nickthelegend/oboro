@@ -1,0 +1,13 @@
+{
+  "name": "@oboro/example-shopping-agent",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./agent.ts" },
+  "scripts": {
+    "start": "tsx cli.ts",
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": { "oboro": "workspace:*", "dotenv": "^17.2.3" }
+}

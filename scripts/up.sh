@@ -21,11 +21,11 @@ mkdir -p .oboro/gate .oboro/tunnel .oboro/logs
 : > .oboro/pids
 start() { local name=$1; shift; "$@" > ".oboro/logs/$name.log" 2>&1 & echo "$! $name" >> .oboro/pids; }
 pnpm --filter oboro build >/dev/null
-pnpm --filter @oboro/dashboard build >/dev/null
-start gateway pnpm --filter @oboro/agents exec tsx src/seller.ts
+pnpm --filter @oboro/wallet-app build >/dev/null
+start gateway pnpm --filter @oboro/gateway exec tsx src/gateway.ts
 start gate "$node_bin" gate --upstream http://127.0.0.1:7420 --data .oboro/gate --status 127.0.0.1:7411
 start tunnel "$node_bin" tunnel --listen 127.0.0.1:7410 --data .oboro/tunnel
-start console pnpm --filter @oboro/dashboard exec tsx server.ts
+start console pnpm --filter @oboro/wallet-app exec tsx server.ts
 echo "Waiting for both Nym clients to connect…"
 for _ in $(seq 1 180); do
   if [[ -s .oboro/gate/address.txt ]] && curl -fsS http://127.0.0.1:7410/status >/dev/null 2>&1; then

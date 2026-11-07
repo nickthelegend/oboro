@@ -1,4 +1,4 @@
 packages:
   - packages/*
-  - apps/agents
-  - apps/dashboard
+  - apps/*
+  - examples/*

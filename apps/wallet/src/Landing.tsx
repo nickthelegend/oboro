@@ -40,7 +40,7 @@ const MCP_CODE = `{
       "env": {
         "OBORO_TUNNEL_URL": "http://127.0.0.1:7410",
         "OBORO_SELLER_NYM_ADDRESS": "<merchant's Nym address>",
-        "OBORO_BUYER_WALLET_DIR": "<your agent's zingo wallet dir>"
+        "OBORO_BUYER_WALLET_DIR": "<the client's zingo wallet dir>"
       }
     }
   }
@@ -54,17 +54,17 @@ const LAYERS = [
     t: 'The SDK developers build on',
     items: [
       ['createWallet()', 'x402 fetch over Nym, spend policy, budget, merchant(addr).buy()'],
-      ['createGateway()', 'Accept private agent payments; verify with a viewing key, no public port'],
+      ['createGateway()', 'Accept private payments; verify with a viewing key, no public port'],
       ['Commerce connectors', 'bitrefillConnector(): recharges, gift cards, top-ups, with caps'],
       ['@oboro/mcp', 'Any MCP model gets the wallet as tools'],
-      ['oboro-node', 'Rust Nym transport: tunnel for agents, gate for merchants'],
+      ['oboro-node', 'Rust Nym transport: tunnel for clients, gate for merchants'],
     ],
   },
   {
     k: 'Wallet app',
     t: 'Where a human stays in charge',
     items: [
-      ['Talk to your agent', 'Ask in plain words; it pays and buys from its own wallet'],
+      ['Balance', 'Shielded ZEC, synced by the user’s own wallet'],
       ['Budget', 'Per-payment and daily caps, allowed payees'],
       ['Approvals', 'Over budget, nothing is bought until you approve'],
       ['Activity', 'Every payment and order, codes masked'],
@@ -76,8 +76,8 @@ const LAYERS = [
 const LEAKS = [
   { row: 'Who paid whom, on chain', plain: 'Public', shielded: 'Hidden', oboro: 'Hidden' },
   { row: 'Amount, on chain', plain: 'Public', shielded: 'Hidden', oboro: 'Hidden' },
-  { row: "Agent's IP, at the seller", plain: 'Seen', shielded: 'Seen', oboro: 'Never reaches it' },
-  { row: "Seller's IP, at the agent", plain: 'Seen', shielded: 'Seen', oboro: 'No public endpoint' },
+  { row: "Payer's IP, at the seller", plain: 'Seen', shielded: 'Seen', oboro: 'Never reaches it' },
+  { row: "Seller's IP, at the payer", plain: 'Seen', shielded: 'Seen', oboro: 'No public endpoint' },
   { row: 'Request-to-payment link, for a network watcher', plain: 'Trivial', shielded: 'Timing + IP', oboro: 'Mixed with cover traffic' },
   { row: 'Broadcasting the payment', plain: 'From your IP', shielded: 'From your IP', oboro: 'Over Nym (zingo Mixnet Mode)' },
 ];
@@ -86,12 +86,12 @@ const STEPS = [
   {
     n: '01',
     t: 'The call crosses the mist',
-    d: 'Your agent calls a paid API. oboro-node wraps the HTTP request in Sphinx packets and sends it through the Nym entry gateway and three mix layers to the merchant’s Nym address. The merchant has no public port at all.',
+    d: 'An app or agent calls a paid API. oboro-node wraps the HTTP request in Sphinx packets and sends it through the Nym entry gateway and three mix layers to the merchant’s Nym address. The merchant has no public port at all.',
   },
   {
     n: '02',
     t: '402, answered on a reply-only path',
-    d: 'The gateway answers 402 Payment Required with an x402 challenge: price in zatoshis, a shielded address and a one-time nonce. The answer rides single-use reply blocks, so the merchant never learns where the agent is.',
+    d: 'The gateway answers 402 Payment Required with an x402 challenge: price in zatoshis, a shielded address and a one-time nonce. The answer rides single-use reply blocks, so the merchant never learns where the payer is.',
   },
   {
     n: '03',
@@ -116,7 +116,7 @@ const FAQ = [
   },
   {
     q: 'Who holds which keys?',
-    a: 'The buyer agent’s wallet holds its spending key and runs locally. The seller’s web server holds only an incoming viewing key, so it can confirm payments but cannot spend. oboro-node holds only Nym identity keys.',
+    a: 'The client’s wallet holds its spending key and runs locally. The seller’s web server holds only an incoming viewing key, so it can confirm payments but cannot spend. oboro-node holds only Nym identity keys.',
   },
   {
     q: 'What does it not hide?',
@@ -130,7 +130,7 @@ const FAQ = [
 
 
 const SHOP_FLOW = [
-  { t: 'Browse, through the mixnet', d: 'The agent reads the merchant’s catalog over Nym. The Bitrefill connector answers with real products, stock and USD prices.' },
+  { t: 'Browse, through the mixnet', d: 'The wallet reads the merchant’s catalog over Nym. The Bitrefill connector answers with real products, stock and USD prices.' },
   { t: 'Pay in the dark', d: 'The gateway answers 402. The wallet checks its budget, then pays in shielded ZEC, broadcast over Nym.' },
   { t: 'Buy inside the caps', d: 'The gateway verifies the note with a viewing key, reserves the txid, and the connector places the order inside the merchant’s caps.' },
   { t: 'Delivered, not just paid', d: 'The connector polls until Bitrefill says delivered. A recharge lands on the phone; a code comes back only in the paid response, masked everywhere else.' },
@@ -178,24 +178,24 @@ export function Landing() {
         <div className="hero-shade" aria-hidden="true" />
         <div className="hero-copy">
           <span className="eyebrow">
-            <span className="dot" /> Private wallet SDK · x402 · Nym · shielded Zcash
+            <span className="dot" /> Wallet SDK · merchant gateway · connectors · MCP
           </span>
           <h1>
-            A private wallet
+            Private payments,
             <br />
-            for AI agents.
+            as infrastructure.
           </h1>
           <p className="lede">
-            Give your agent a wallet that pays APIs and buys real things, like phone recharges and grocery credit, in
-            shielded Zcash. Every request and payment crosses the Nym mixnet, so no merchant learns who asked, from where,
-            or which wallet paid. Anything over budget waits for you.
+            One SDK gives any app, agent or store a wallet that pays in shielded Zcash, over the Nym mixnet. Pay per API
+            call, or buy real goods through commerce connectors. The merchant never learns who paid, from where, or with
+            which wallet. A person keeps the budget.
           </p>
           <div className="ctas">
-            <a className="btn btn-moon" href="#/wallet">
-              Open the wallet <span aria-hidden="true">→</span>
+            <a className="btn btn-moon" href="#sdk">
+              Read the SDK <span aria-hidden="true">→</span>
             </a>
-            <a className="btn btn-ghost" href="#sdk">
-              Read the SDK
+            <a className="btn btn-ghost" href="#/wallet">
+              Open the wallet
             </a>
           </div>
         </div>
@@ -245,7 +245,7 @@ export function Landing() {
           <>
             <Stat n={served ?? 0} l="paid requests served over the mixnet" />
             <Stat n={paid.length} l="payments settled in shielded ZEC" />
-            <Stat n={zec(paid.reduce((a, r) => a + r.priceZats, 0))} l={chainName() === 'mainnet' ? 'ZEC paid by agent wallets (mainnet)' : 'TAZ paid by agent wallets (testnet ZEC)'} />
+            <Stat n={zec(paid.reduce((a, r) => a + r.priceZats, 0))} l={chainName() === 'mainnet' ? 'ZEC paid through Oboro wallets (mainnet)' : 'TAZ paid through Oboro wallets (testnet ZEC)'} />
             <Stat n={delivered.length} l="real Bitrefill purchases delivered" />
           </>
         ) : (
@@ -263,8 +263,8 @@ export function Landing() {
           <span className="eyebrow">Two layers</span>
           <h2>Infrastructure for developers. A wallet for people.</h2>
           <p className="sub">
-            Developers plug the SDK, the gateway or the MCP server into any agent or store. The people whose agents spend
-            get one wallet app to set the budget, approve what’s over it and see who saw what.
+            Developers plug the SDK, the gateway or the MCP server into any app, agent or store. The person whose money it
+            is gets one wallet app to set the budget, approve what’s over it and see who saw what.
           </p>
         </div>
         <div className="layers">
@@ -286,13 +286,83 @@ export function Landing() {
         </div>
       </section>
 
+      <section className="section" id="sdk">
+        <div className="section-head">
+          <span className="eyebrow">Wallet SDK</span>
+          <h2>One import on each side.</h2>
+          <p className="sub">
+            Clients get <code>createWallet()</code>: a <code>fetch</code> that pays x402 over Nym, a budget, and a merchant
+            client that buys real goods. Merchants get <code>createGateway()</code>, which verifies with a viewing key. Any
+            MCP host gets the same wallet as eight tools.
+          </p>
+        </div>
+        <div className="code-card frame">
+          <div className="tabs" role="tablist">
+            {(
+              [
+                ['agent', 'Wallet (client)'],
+                ['seller', 'Gateway (merchant)'],
+                ['mcp', 'MCP'],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                role="tab"
+                aria-selected={tab === k}
+                className={`tab ${tab === k ? 'on' : ''}`}
+                onClick={() => setTab(k)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <pre className="code">
+            <code>{tab === 'agent' ? AGENT_CODE : tab === 'seller' ? SELLER_CODE : MCP_CODE}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="section" id="examples">
+        <div className="section-head">
+          <span className="eyebrow">Examples</span>
+          <h2>Build anything that spends. Here are three.</h2>
+          <p className="sub">
+            Agents are clients of the wallet, not the product. Each example is a small program in <code>examples/</code>{' '}
+            that spends only through <code>createWallet()</code>, inside the same budget.
+          </p>
+        </div>
+        <div className="examples">
+          <a className="example" href="#/examples">
+            <span className="chip">LLM · try it live</span>
+            <h3>Shopping agent</h3>
+            <p>A chat model with five tools, each one SDK call. It finds, pays and buys; over the limit, it asks you.</p>
+            <span className="mono">examples/shopping-agent</span>
+            <span className="example-go">Open the example →</span>
+          </a>
+          <a className="example" href="https://github.com/nickthelegend/oboro/tree/main/examples/paid-api-agent" target="_blank" rel="noreferrer">
+            <span className="chip">script</span>
+            <h3>Paid-API agent</h3>
+            <p>About 25 lines: pay an x402 API per call, decide whether the next call is worth it.</p>
+            <span className="mono">examples/paid-api-agent</span>
+            <span className="example-go">Read the code ↗</span>
+          </a>
+          <a className="example" href="https://github.com/nickthelegend/oboro/tree/main/examples/mcp-client" target="_blank" rel="noreferrer">
+            <span className="chip">MCP</span>
+            <h3>Any MCP client</h3>
+            <p>Point Claude Desktop or any MCP host at <code>@oboro/mcp</code> and the wallet is eight tools.</p>
+            <span className="mono">examples/mcp-client</span>
+            <span className="example-go">Read the config ↗</span>
+          </a>
+        </div>
+      </section>
+
       <section className="section" id="why">
         <div className="section-head">
           <span className="eyebrow">The second leak</span>
           <h2>A private payment still arrives from somewhere.</h2>
           <p className="sub">
             Shielded x402 hides the money. But the HTTP call that triggered it comes from an IP, at a moment, to a
-            server. Put the two side by side and the agent is no longer anonymous. Oboro closes the network leak too.
+            server. Put the two side by side and the payer is no longer anonymous. Oboro closes the network leak too.
           </p>
         </div>
         <div className="leaks" role="table" aria-label="What each approach exposes">
@@ -324,12 +394,12 @@ export function Landing() {
       <section className="section" id="how">
         <div className="section-head">
           <span className="eyebrow">How a paid call travels</span>
-          <h2>Five veils between your agent and the merchant.</h2>
+          <h2>Five veils between the wallet and the merchant.</h2>
         </div>
         <figure className="veil-figure frame">
           <img src="/veils.jpg" alt="A packet of light weaving through five veils of mist toward the moon" />
           <figcaption className="veil-labels" aria-hidden="true">
-            <span>Your agent</span>
+            <span>Your wallet</span>
             {['Entry gateway', 'Mix layer 1', 'Mix layer 2', 'Mix layer 3', 'Merchant’s gateway'].map((v) => (
               <span key={v}>{v}</span>
             ))}
@@ -353,9 +423,9 @@ export function Landing() {
           <span className="eyebrow">Commerce connectors · Bitrefill first</span>
           <h2>It buys real things, too.</h2>
           <p className="section-lede">
-            The same wallet pays for goods. Your agent needs no Bitrefill account, no card and no exposed IP: it pays the
+            The same wallet pays for goods. The client needs no Bitrefill account, no card and no exposed IP: it pays the
             merchant in shielded ZEC over Nym, and that payment authorises one real order, placed by the merchant’s
-            connector inside hard caps. Bitrefill delivers; nobody upstream learns which agent asked.
+            connector inside hard caps. Bitrefill delivers; nobody upstream learns who asked.
           </p>
         </div>
         <div className="shop-promo">
@@ -403,42 +473,6 @@ export function Landing() {
               <p className="empty">No purchase delivered yet. The first one shows its Bitrefill invoice ID here.</p>
             )}
           </div>
-        </div>
-      </section>
-
-      <section className="section" id="sdk">
-        <div className="section-head">
-          <span className="eyebrow">Wallet SDK</span>
-          <h2>One import on each side.</h2>
-          <p className="sub">
-            Agents get <code>createWallet()</code>: a <code>fetch</code> that pays x402 over Nym, a budget, and a merchant
-            client that buys real goods. Merchants get <code>createGateway()</code>, which verifies with a viewing key. Any
-            MCP-capable model gets the same wallet as eight tools.
-          </p>
-        </div>
-        <div className="code-card frame">
-          <div className="tabs" role="tablist">
-            {(
-              [
-                ['agent', 'Wallet (agent)'],
-                ['seller', 'Gateway (merchant)'],
-                ['mcp', 'MCP'],
-              ] as const
-            ).map(([k, label]) => (
-              <button
-                key={k}
-                role="tab"
-                aria-selected={tab === k}
-                className={`tab ${tab === k ? 'on' : ''}`}
-                onClick={() => setTab(k)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <pre className="code">
-            <code>{tab === 'agent' ? AGENT_CODE : tab === 'seller' ? SELLER_CODE : MCP_CODE}</code>
-          </pre>
         </div>
       </section>
 

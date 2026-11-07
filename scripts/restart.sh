@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 umask 077
 name=${1:?usage: scripts/restart.sh gateway|console|gate|tunnel}
 case $name in
-  gateway) cmd=(pnpm --filter @oboro/agents exec tsx src/seller.ts) ;;
-  console) cmd=(pnpm --filter @oboro/dashboard exec tsx server.ts) ;;
+  gateway) cmd=(pnpm --filter @oboro/gateway exec tsx src/gateway.ts) ;;
+  console) cmd=(pnpm --filter @oboro/wallet-app exec tsx server.ts) ;;
   gate|tunnel) ;;
   *) echo "Unknown piece: $name (gateway, console, gate or tunnel)" >&2; exit 2 ;;
 esac
