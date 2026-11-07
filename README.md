@@ -55,6 +55,20 @@ purchase and the gateway pays Bitrefill from its store credits (real money, smal
 
 ## Demo
 
+### Wallet film (7 Nov 2026, filmed live)
+
+Film: `videos/oboro-wallet-film.mp4` (2:47; link added when uploaded). Every demo step ran live on camera, and sped-up stretches are badged.
+- **x402 API call from the agent wallet**, over Nym: 2,000 zats, shielded tx
+  [`9efd8b83…609e`](https://testnet.zcashexplorer.app/transactions/9efd8b83008c6bba12fd8c4267b3efa681c7a7e22f052fe15d65187de312609e)
+  (block 4,593,599), verified by the merchant gateway's viewing key and served.
+- **Over-budget purchase from the wallet app:** *"Buy me ₹250 of Swiggy credit for groceries."* ($2.77, over the $1 cap.)
+  The agent asks first, pays ([`ac7eb817…ccf5`](https://testnet.zcashexplorer.app/transactions/ac7eb8176f102d9f938840e0dd6c1f0cb8e441faedfd941aceb5f9b26287ccf5)),
+  the purchase waits for a human, the human approves, and the Bitrefill connector delivers invoice
+  **`0d69acd0-70eb-4e8c-a8c8-279bac72b4ea`**.
+
+### Earlier runs (4 Nov 2026)
+
+
 - **Testnet tx (shielded, v6, created by Oboro):** [`4f3bb7a47716b30074dedb8df06ebae9094a08b4847ce41a75f0c588253ba3a1`](https://testnet.zcashexplorer.app/transactions/4f3bb7a47716b30074dedb8df06ebae9094a08b4847ce41a75f0c588253ba3a1)
   (block 4,581,179). The agent paid the gateway 2,000 zats for `/v1/intel/tip`, pressed from the console. The request,
   the 402 and the paid retry all crossed the Nym mixnet. Zexplorer link: <https://zexplorer.app/testnet/tx/4f3bb7a47716b30074dedb8df06ebae9094a08b4847ce41a75f0c588253ba3a1>
