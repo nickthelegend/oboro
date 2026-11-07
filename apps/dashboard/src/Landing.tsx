@@ -191,7 +191,7 @@ export function Landing() {
             or which wallet paid. Anything over budget waits for you.
           </p>
           <div className="ctas">
-            <a className="btn btn-moon" href="#/shop">
+            <a className="btn btn-moon" href="#/wallet">
               Open the wallet <span aria-hidden="true">→</span>
             </a>
             <a className="btn btn-ghost" href="#sdk">
@@ -380,7 +380,7 @@ export function Landing() {
                 </li>
               ))}
             </ul>
-            <a className="btn btn-moon" href="#/shop">
+            <a className="btn btn-moon" href="#/wallet">
               Open the wallet <span aria-hidden="true">→</span>
             </a>
           </div>

@@ -47,7 +47,7 @@ export function Nav({ console = false }: { console?: boolean }) {
         <a className="nav-shop hide-sm" href="#/console">
           Developers
         </a>
-        <a className={`btn ${console ? 'btn-ghost' : 'btn-moon'} btn-sm`} href="#/shop">
+        <a className={`btn ${console ? 'btn-ghost' : 'btn-moon'} btn-sm`} href="#/wallet">
           Open wallet
         </a>
       </div>
@@ -64,13 +64,13 @@ export function Footer() {
             <Logo size={40} />
             <span>Oboro</span>
           </div>
-          <p className="footer-line">x402 and agent shopping over the Nym mixnet, paid in shielded Zcash.</p>
+          <p className="footer-line">The private wallet for AI agents: shielded Zcash, over the Nym mixnet.</p>
         </div>
         <div className="footer-cols">
           <div>
             <h4>Product</h4>
-            <a href="#/console">Console</a>
-            <a href="#/shop">Shop</a>
+            <a href="#/console">Developer console</a>
+            <a href="#/wallet">Wallet</a>
             <a href="#sdk">SDK</a>
             <a href="#how">How it works</a>
           </div>

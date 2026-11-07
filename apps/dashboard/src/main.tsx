@@ -15,7 +15,7 @@ function useRoute() {
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
-  return hash.startsWith('#/console') ? 'console' : hash.startsWith('#/shop') ? 'shop' : 'landing';
+  return hash.startsWith('#/console') ? 'console' : (hash.startsWith('#/wallet') || hash.startsWith('#/shop')) ? 'shop' : 'landing';
 }
 
 function App() {

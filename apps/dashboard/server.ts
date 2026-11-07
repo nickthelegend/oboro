@@ -170,7 +170,7 @@ app.post('/api/run', async (req, res) => {
   const buyerDir = process.env.OBORO_BUYER_WALLET_DIR;
   if (!buyerDir) return res.status(412).json({ error: 'Setup required: OBORO_BUYER_WALLET_DIR' });
   const gateway = await sellerNymAddress();
-  if (!gateway) return res.status(412).json({ error: 'Setup required: gateway’s gate is not running (no Nym address)' });
+  if (!gateway) return res.status(412).json({ error: 'Setup required: the merchant gateway’s Nym gate is not running (no Nym address)' });
 
   const run: Run = { id: randomUUID(), endpoint: item.endpoint, path: item.path, startedAt: new Date().toISOString(), status: 'running', events: [] };
   runs.unshift(run);
@@ -278,7 +278,7 @@ let quoteCache: { at: number; body?: unknown; mixMs?: number; error?: string } =
 app.get('/api/shop/quote', async (_req, res) => {
   if (Date.now() - quoteCache.at < 60_000 && (quoteCache.body || quoteCache.error)) return res.json({ ...quoteCache, cached: true });
   const gateway = await sellerNymAddress();
-  if (!gateway) return res.status(412).json({ error: 'Setup required: gateway’s gate is not running (no Nym address)' });
+  if (!gateway) return res.status(412).json({ error: 'Setup required: the merchant gateway’s Nym gate is not running (no Nym address)' });
   try {
     const q = await viaNym(gateway, '/v1/shop/product/swiggy-money-india');
     quoteCache = q.status === 200 ? { at: Date.now(), body: q.body, mixMs: q.mixMs } : { at: Date.now(), error: String(q.body.error ?? `HTTP ${q.status}`) };
@@ -300,7 +300,7 @@ export async function launchShopRun(productIdIn: unknown, valueIn: unknown, by: 
   const phone = topUp ? process.env.OBORO_SHOP_PHONE : undefined;
   if (topUp && !phone) return { status: 412, error: 'Setup required: a phone number for the top-up (Setup card)' };
   const gateway = await sellerNymAddress();
-  if (!gateway) return { status: 412, error: 'Setup required: gateway’s gate is not running (no Nym address)' };
+  if (!gateway) return { status: 412, error: 'Setup required: the merchant gateway’s Nym gate is not running (no Nym address)' };
 
   const run: ShopRun = { id: randomUUID(), startedAt: new Date().toISOString(), status: 'running', by, phoneMasked: maskPhone(phone), steps: [] };
   shopRuns.unshift(run);
@@ -408,7 +408,7 @@ app.post('/api/shop/run', async (req, res) => {
 const wallet = createChatAgent({
   viaNym: async (path) => {
     const gateway = await sellerNymAddress();
-    if (!gateway) throw new Error('gateway’s gate is not running');
+    if (!gateway) throw new Error('the merchant gateway’s Nym gate is not running');
     return viaNym(gateway, path);
   },
   launchShopRun: (productId, value) => launchShopRun(productId, value, 'agent'),

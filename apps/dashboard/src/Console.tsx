@@ -103,10 +103,10 @@ export function Console() {
                 </button>
               ))}
               {state && state.catalog.length === 0 && <p className="empty">The merchant gateway is not advertising anything yet.</p>}
-              <a className="buy buy-shop" href="#/shop">
+              <a className="buy buy-shop" href="#/wallet">
                 <span className="buy-path mono">/v1/shop/buy</span>
-                <span className="buy-desc">A real Bitrefill gift card, authorised by a shielded payment</span>
-                <span className="buy-price">Shop →</span>
+                <span className="buy-desc">Buy a real recharge or gift card from the wallet</span>
+                <span className="buy-price">Wallet →</span>
               </a>
             </div>
             <RunList runs={runs} active={active?.id} onPick={setSelected} />
