@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { GiftCard } from './GiftCard';
 import { Shell } from './shell';
-import { ago, inr, shortTx, explorerTx, stamp, usd, useRelay, zecOf, type RelayProduct, type RelayState } from './relay';
+import { ago, inr, kindOf, shortTx, explorerTx, stamp, usd, useRelay, zecOf, type RelayProduct, type RelayState } from './relay';
 
-const NEVER_SAW = ['IP address', 'Nym address', 'payer address', 'account', 'email', 'phone number'];
+const NEVER_SAW = ['IP address', 'Nym address', 'payer address', 'account', 'email'];
 const KNOWS = ['product', 'price', 'txid', 'time'];
 
 export function Home({ section }: { section?: 'developers' }) {
@@ -18,7 +18,7 @@ export function Home({ section }: { section?: 'developers' }) {
         <section className="r-hero wrap">
           <span className="r-eyebrow">
             <span className="tag">Live</span>
-            Real Bitrefill cards · shielded Zcash · Nym mixnet
+            Real gift cards and recharges · shielded Zcash · Nym mixnet
           </span>
           <h1>
             <span className="soft">The shop AI agents</span>
@@ -27,7 +27,7 @@ export function Home({ section }: { section?: 'developers' }) {
           </h1>
           <p className="r-lede">
             Any agent gets a live quote, pays the <b>full price in shielded ZEC</b> with one x402 call over the Nym mixnet, and
-            gets a real gift-card code back, <b>sealed so only that agent can open it</b>. We learn what sold. Never who bought it.
+            gets a real gift-card code back, <b>sealed so only that agent can open it</b>, or tops up a phone. We learn what sold. Never who bought it.
           </p>
           <div className="r-ctas">
             <a className="r-btn primary" href="#/store">
@@ -141,6 +141,8 @@ export function Home({ section }: { section?: 'developers' }) {
             <div><h4>Testnet coins, real cards</h4><p>Agents pay in Zcash testnet coins, priced 1:1 at the mainnet ZEC rate. The cards are real and paid from the relay’s Bitrefill balance{typeof state.float_usd === 'number' ? ` (${usd(state.float_usd)} left)` : ''}.</p></div>
             <div><h4>You trust the relay to deliver</h4><p>The agent pays first. If Bitrefill fails, the relay refunds to the shielded address the agent named.</p></div>
             <div><h4>Wallet sync still sees an IP</h4><p>Payments and requests go over Nym; the agent’s own wallet sync to the light-wallet server does not yet.</p></div>
+            <div><h4>A recharge needs the number</h4><p>Gift cards need nothing about you. A phone recharge can’t work without the number, so it goes to Bitrefill; the relay keeps only its last 2 digits.</p></div>
+            <div><h4>Codes are cash</h4><p>Only the buying agent opens the code. The relay forgets it after delivery and its record keeps a masked copy.</p></div>
             <div><h4>One operator, low traffic</h4><p>Few sales make timing easier to correlate. More buyers make every buyer harder to pick out.</p></div>
           </div>
         </section>
@@ -148,7 +150,7 @@ export function Home({ section }: { section?: 'developers' }) {
         <section className="wrap">
           <div className="band">
             <h2>Give your agent a shop.</h2>
-            <p>Real gift cards, real prices, and a seller that never learns who you are.</p>
+            <p>Real gift cards and recharges, real prices, and a seller that never learns who you are.</p>
             <div className="r-ctas">
               <a className="r-btn primary" href="#/store">Open the store <span className="arrow">→</span></a>
               <a className="r-btn ghost" href="https://github.com/nickthelegend/oboro" target="_blank" rel="noreferrer">View on GitHub</a>
@@ -161,7 +163,7 @@ export function Home({ section }: { section?: 'developers' }) {
 }
 
 function pickFirst(products: RelayProduct[]) {
-  for (const product of products) {
+  for (const product of products.filter((p) => kindOf(p) === 'card')) {
     const pkg = product.packages.find((p) => p.available) ?? product.packages[0];
     if (pkg) return { product, pkg };
   }
@@ -169,7 +171,7 @@ function pickFirst(products: RelayProduct[]) {
 }
 
 function LiveQuote({ state, status, product, pkg }: { state: RelayState; status: string; product?: RelayProduct; pkg?: RelayProduct['packages'][number] }) {
-  const second = state.products.find((p) => p.product_id !== product?.product_id);
+  const second = state.products.find((p) => p.product_id !== product?.product_id && kindOf(p) === 'card');
   const secondPkg = second?.packages[0];
   if (status === 'loading') return <div className="r-frame-body"><div><span className="r-label">Loading the live catalog…</span></div><div /></div>;
   if (!product || !pkg || !state.rate) {

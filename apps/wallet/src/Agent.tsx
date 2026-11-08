@@ -3,7 +3,8 @@ import { chatAgent, type ChatTurn, type ToolTrace } from './api';
 import { Logo } from './chrome';
 import { Shell } from './shell';
 import { useConsole } from './useConsole';
-import { explorerTx, shortTx, useRelay, useRun } from './relay';
+import { explorerTx, inr, kindOf, plan, shortTx, useRelay, useRun } from './relay';
+import { CodeTicket } from './Store';
 
 const SOURCE = 'https://github.com/nickthelegend/oboro/blob/main/examples/shopping-agent/agent.ts';
 const TOOL: Record<string, string> = {
@@ -12,7 +13,7 @@ const TOOL: Record<string, string> = {
 const SUGGEST = [
   'What gift cards can you get me?',
   'Get me a ₹250 Blinkit card',
-  'How much is ₹500 of Swiggy in ZEC?',
+  'Recharge my Jio number for a month',
 ];
 
 // The conversation survives route changes for this page load only.
@@ -73,7 +74,7 @@ export function Agent() {
               <div className="hello">
                 <Logo size={40} />
                 <h2>What should it buy?</h2>
-                <p>Real gift cards from the relay, paid in shielded Zcash over Nym.</p>
+                <p>Real gift cards and phone recharges from the relay, paid in shielded Zcash over Nym.</p>
                 <div className="sugg">
                   {SUGGEST.map((q) => (
                     <button key={q} disabled={disabled} onClick={() => send(q)}>{q}</button>
@@ -137,7 +138,7 @@ function Purchase({ id }: { id: string }) {
   return (
     <div className="buy">
       <div className="buy-top">
-        <b>{run.quote ? `${run.quote.name} · ₹${run.quote.value}` : 'Purchase'}</b>
+        <b>{run.quote ? (kindOf(run.quote) === 'recharge' ? `${run.quote.name.replace(/ Bundles India$/, '')} · ${plan(run.quote.value).data}` : `${run.quote.name} · ${inr(run.quote.value, run.quote.currency)}`) : 'Purchase'}</b>
         {run.txid ? <a className="mono" href={explorerTx(run.txid)} target="_blank" rel="noreferrer">{shortTx(run.txid)}</a> : null}
       </div>
       <div className="buy-steps">
@@ -147,7 +148,9 @@ function Purchase({ id }: { id: string }) {
           return <span key={k} className={cls}>{label}</span>;
         })}
       </div>
-      {run.stage === 'delivered' && run.result ? <p className="r-note mono">Bitrefill invoice {run.result.invoice_id}</p> : null}
+      {run.stage === 'delivered' && run.result ? (kindOf(run.quote) === 'recharge'
+        ? <p className="r-note mono">Recharged {run.result.phone_masked ?? ''} · Bitrefill invoice {run.result.invoice_id}</p>
+        : <CodeTicket runId={id} run={run} />) : null}
       {run.stage === 'failed' ? <p className="r-note" style={{ color: 'var(--bad)' }}>{run.error}</p> : null}
     </div>
   );
