@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Logo } from './chrome';
-import type { RelayState } from './relay';
+import { stamp, type RelayState, type RelayStatus } from './relay';
 
 const LINKS = [
   ['store', '#/store', 'Store'],
@@ -9,7 +9,7 @@ const LINKS = [
 ] as const;
 export type RTab = (typeof LINKS)[number][0] | 'home';
 
-export function Shell({ active, status, state, children }: { active: RTab; status: 'loading' | 'ok' | 'offline'; state?: RelayState; children: ReactNode }) {
+export function Shell({ active, status, state, children }: { active: RTab; status: RelayStatus; state?: RelayState; children: ReactNode }) {
   const live = status === 'ok' && !!state?.rate && state.setup.length === 0;
   return (
     <div className="r">
@@ -28,9 +28,9 @@ export function Shell({ active, status, state, children }: { active: RTab; statu
             ))}
           </nav>
           <div className="right">
-            <span className="r-pill mono" title={live ? 'Relay reachable over the Nym mixnet' : 'Relay not reachable from this page'}>
+            <span className="r-pill mono" title={live ? 'Relay reachable over the Nym mixnet' : status === 'snapshot' ? 'This copy cannot reach the relay over Nym; it shows the relay’s public data as captured' : 'Relay not reachable from this page'}>
               <span className={`r-dot ${live ? '' : 'off'}`} />
-              {status === 'loading' ? 'Connecting…' : live ? 'Relay live · Zcash testnet' : 'Relay offline'}
+              {status === 'loading' ? 'Connecting…' : live ? 'Relay live · Zcash testnet' : status === 'snapshot' ? `Snapshot · ${stamp(state?.captured_at)}` : 'Relay offline'}
             </span>
             <a className="r-icon" href="https://github.com/nickthelegend/oboro" target="_blank" rel="noreferrer" aria-label="Oboro on GitHub">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">

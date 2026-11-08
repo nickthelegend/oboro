@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GiftCard } from './GiftCard';
 import { Shell } from './shell';
-import { ago, explorerTx, inr, shortTx, startBuy, usd, useRelay, useRun, zecOf, type RelayRun } from './relay';
+import { ago, explorerTx, inr, shortTx, stamp, startBuy, usd, useRelay, useRun, zecOf, type RelayRun } from './relay';
 
 const STAGES: { key: RelayRun['stage']; label: string; hint: string }[] = [
   { key: 'quote', label: 'Live quote', hint: 'Bitrefill price at the live ZEC rate' },
@@ -30,6 +30,7 @@ export function Store() {
   const pkg = product?.packages.find((k) => k.value === sel?.value);
   const busy = !!run && run.stage !== 'delivered' && run.stage !== 'failed';
   const sold = state.limits?.sold_today_usd ?? 0;
+  const snapshot = status === 'snapshot';
 
   const buy = async () => {
     if (!product || !pkg) return;
@@ -92,10 +93,14 @@ export function Store() {
             <aside className="checkout" aria-label="Checkout">
               <h2>{run?.quote ? `${run.quote.name} · ${inr(run.quote.value, run.quote.currency)}` : product && pkg ? `${product.name} · ${inr(pkg.value, product.currency)}` : 'Pick a card'}</h2>
               <Quote run={run} pkg={pkg} rate={state.rate?.usd} />
-              <button className="r-btn primary" disabled={!pkg || !pkg.available || busy} onClick={buy}>
+              <button className="r-btn primary" disabled={snapshot || !pkg || !pkg.available || busy} onClick={buy}>
                 {busy ? 'Buying over Nym…' : run?.stage === 'delivered' ? 'Buy another' : 'Buy as the demo agent'}
               </button>
-              <p className="r-note">Runs the operator’s demo agent on this machine: a real shielded payment and a real Bitrefill order.</p>
+              <p className="r-note">
+                {snapshot
+                  ? `This hosted copy can’t reach the relay over Nym, so it shows the relay’s public data captured ${stamp(state.captured_at)}. Live buying runs on the operator’s machine (see the film).`
+                  : 'Runs the operator’s demo agent on this machine: a real shielded payment and a real Bitrefill order.'}
+              </p>
               {startErr ? <div className="err">{startErr}</div> : null}
               {run ? <Stages run={run} /> : null}
               {run?.stage === 'delivered' && run.result ? (

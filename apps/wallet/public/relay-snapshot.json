@@ -1,0 +1,95 @@
+{
+ "rate": {
+  "usd": 1259.8,
+  "source": "kraken",
+  "at": "2026-11-08T04:31:02.816Z"
+ },
+ "float_usd": 5.97,
+ "limits": {
+  "max_usd_per_sale": 6,
+  "max_usd_per_day": 9,
+  "sold_today_usd": 2.77
+ },
+ "products": [
+  {
+   "product_id": "blink-it-india",
+   "name": "Blinkit India",
+   "currency": "INR",
+   "in_stock": true,
+   "packages": [
+    {
+     "value": "250",
+     "usd": 2.77,
+     "zats": 219900,
+     "available": true
+    },
+    {
+     "value": "500",
+     "usd": 5.54,
+     "zats": 439800,
+     "available": true
+    }
+   ]
+  },
+  {
+   "product_id": "swiggy-money-india",
+   "name": "Swiggy Money India",
+   "currency": "INR",
+   "in_stock": true,
+   "packages": [
+    {
+     "value": "250",
+     "usd": 2.77,
+     "zats": 219900,
+     "available": true
+    },
+    {
+     "value": "500",
+     "usd": 5.54,
+     "zats": 439800,
+     "available": true
+    }
+   ]
+  }
+ ],
+ "setup": [],
+ "relay": {
+  "sales": [
+   {
+    "name": "Blinkit India",
+    "value": "250",
+    "currency": "INR",
+    "usd": 2.77,
+    "zats": 219400,
+    "zec_usd": 1262.71,
+    "txid": "44d6e793\u20264b80b971",
+    "status": "delivered",
+    "created_at": "2026-11-08T04:21:38.906Z",
+    "delivered_at": "2026-11-08T04:21:42.499Z",
+    "invoice_id": "cb69dc7c-9e28-4574-b560-90448043cd07"
+   }
+  ],
+  "relay_knows": [
+   "product",
+   "price",
+   "txid",
+   "time"
+  ],
+  "relay_never_saw": [
+   "IP address",
+   "Nym address",
+   "payer address",
+   "account",
+   "email",
+   "phone number"
+  ],
+  "today": 2.77,
+  "float_usd": 5.97,
+  "rate": {
+   "usd": 1259.8,
+   "source": "kraken",
+   "at": "2026-11-08T04:31:02.816Z"
+  }
+ },
+ "captured_at": "2026-11-08T04:31:04Z"
+}

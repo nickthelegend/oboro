@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { GiftCard } from './GiftCard';
 import { Shell } from './shell';
-import { ago, inr, shortTx, explorerTx, usd, useRelay, zecOf, type RelayProduct, type RelayState } from './relay';
+import { ago, inr, shortTx, explorerTx, stamp, usd, useRelay, zecOf, type RelayProduct, type RelayState } from './relay';
 
 const NEVER_SAW = ['IP address', 'Nym address', 'payer address', 'account', 'email', 'phone number'];
 const KNOWS = ['product', 'price', 'txid', 'time'];
@@ -202,7 +202,7 @@ function LiveQuote({ state, status, product, pkg }: { state: RelayState; status:
           <div className="row"><span className="k">Route</span><span className="v">Nym mixnet · relay has no public port</span></div>
           <div className="row total"><span className="k">Agent pays</span><span className="v mono">{zecOf(pkg.zats)} ZEC</span></div>
         </div>
-        <p className="r-note mono">{pkg.zats.toLocaleString()} zats · live from the relay, refreshed every 15 s</p>
+        <p className="r-note mono">{pkg.zats.toLocaleString()} zats · {status === 'snapshot' ? `snapshot of the relay, ${stamp(state.captured_at)}` : 'live from the relay, refreshed every 15 s'}</p>
       </div>
     </div>
   );

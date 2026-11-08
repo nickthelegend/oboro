@@ -18,6 +18,7 @@ export type RelayState = {
   sales: RelaySale[];
   relay_knows: string[];
   relay_never_saw: string[];
+  captured_at?: string;
 };
 export type RelayRun = {
   stage: 'quote' | 'paying' | 'paid' | 'verifying' | 'buying' | 'delivered' | 'failed';
@@ -44,12 +45,16 @@ function normalise(raw: Record<string, unknown>): RelayState {
     sales: list<RelaySale>(relay.sales),
     relay_knows: list<string>(relay.relay_knows),
     relay_never_saw: list<string>(relay.relay_never_saw),
+    captured_at: typeof raw.captured_at === 'string' ? raw.captured_at : undefined,
   };
 }
 
+export type RelayStatus = 'loading' | 'ok' | 'offline' | 'snapshot';
+export const stamp = (iso?: string) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC' : '');
+
 export function useRelay(every = 15000) {
   const [state, setState] = useState<RelayState>(EMPTY);
-  const [status, setStatus] = useState<'loading' | 'ok' | 'offline'>('loading');
+  const [status, setStatus] = useState<RelayStatus>('loading');
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -57,10 +62,15 @@ export function useRelay(every = 15000) {
         const r = await fetch('/api/relay');
         const body = (await r.json()) as Record<string, unknown>;
         if (!alive) return;
-        setState(normalise(body));
-        setStatus(r.ok ? 'ok' : 'offline');
+        if (r.ok) { setState(normalise(body)); setStatus('ok'); return; }
+        throw new Error('relay unreachable');
       } catch {
-        if (alive) setStatus('offline');
+        // Where the relay can't be reached over Nym (the hosted copy), show the dated snapshot of its public data.
+        try {
+          const s = await fetch('/relay-snapshot.json');
+          if (!s.ok) throw new Error('no snapshot');
+          if (alive) { setState(normalise((await s.json()) as Record<string, unknown>)); setStatus('snapshot'); }
+        } catch { if (alive) setStatus('offline'); }
       }
     };
     void load();
