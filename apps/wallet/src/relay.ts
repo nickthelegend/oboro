@@ -44,7 +44,7 @@ function normalise(raw: Record<string, unknown>): RelayState {
     float_usd: (catalog.float_usd ?? relay.float_usd) as number | undefined,
     limits: catalog.limits as RelayState['limits'],
     products: list<RelayProduct>(catalog.products),
-    sales: list<RelaySale>(relay.sales),
+    sales: list<RelaySale>(relay.sales).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
     relay_knows: list<string>(relay.relay_knows),
     relay_never_saw: list<string>(relay.relay_never_saw),
     recharge_note: typeof relay.recharge_note === 'string' ? relay.recharge_note : undefined,

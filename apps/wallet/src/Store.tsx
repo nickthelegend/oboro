@@ -131,9 +131,9 @@ export function Store() {
                     : 'Runs the operator’s demo agent on this machine: a real shielded payment and a real Bitrefill order.'}
               </p>
               {startErr ? <div className="err">{startErr}</div> : null}
-              {run ? <Stages run={run} kind={kindOf(run.quote) ?? kind} /> : null}
+              {run ? <Stages run={run} kind={run.quote ? kindOf(run.quote) : kind} /> : null}
               {run?.stage === 'delivered' && run.result && runId ? (
-                kindOf(run.quote) === 'recharge'
+                (run.quote ? kindOf(run.quote) : kind) === 'recharge'
                   ? <Recharged run={run} phone={phone} />
                   : <CodeTicket runId={runId} run={run} />
               ) : null}

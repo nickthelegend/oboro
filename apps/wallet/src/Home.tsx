@@ -143,6 +143,7 @@ export function Home({ section }: { section?: 'developers' }) {
                 {(state.relay_knows.length ? state.relay_knows : KNOWS).map((x) => (
                   <span key={x} className="chip yes">{x}</span>
                 ))}
+                <span className="chip yes">last 2 digits of the number · recharges only</span>
               </div>
             </div>
           </div>
@@ -248,7 +249,8 @@ function LastSale({ state, status }: { state: RelayState; status: string }) {
   if (!sale) return <div className="empty">{status === 'offline' ? 'Relay offline. The record appears when it is reachable.' : 'No sales yet. The first sale appears here, exactly as stored.'}</div>;
   return (
     <div className="rows">
-      <div className="row"><span className="k">product</span><span className="v">{sale.name ?? sale.product_id} · {inr(sale.value, sale.currency)}</span></div>
+      <div className="row"><span className="k">product</span><span className="v">{kindOf(sale) === 'recharge' ? `${(sale.name ?? '').replace(/ Bundles India$/, '')} · ${sale.value}` : `${(sale.name ?? sale.product_id ?? '').replace(/ India$/, '')} · ${inr(sale.value, sale.currency)}`}</span></div>
+      {kindOf(sale) === 'recharge' && sale.phone_masked ? <div className="row"><span className="k">number</span><span className="v mono">{sale.phone_masked}</span></div> : null}
       <div className="row"><span className="k">price</span><span className="v mono">{usd(sale.usd)} · {sale.zats.toLocaleString()} zats</span></div>
       <div className="row"><span className="k">txid</span><span className="v mono">{sale.txid.includes('…') ? sale.txid : <a href={explorerTx(sale.txid)} target="_blank" rel="noreferrer">{shortTx(sale.txid)}</a>}</span></div>
       <div className="row"><span className="k">time</span><span className="v mono">{new Date(sale.created_at).toISOString().replace('T', ' ').slice(0, 19)} UTC</span></div>

@@ -1,7 +1,7 @@
 # Oboro 朧: the shop AI agents buy from
 
-**Real Bitrefill gift cards for AI agents, at the live price in shielded Zcash, paid with one x402 call over the Nym
-mixnet. The code comes back sealed to the buying agent. The shop learns what sold, never who bought it.**
+**Real Bitrefill gift cards and phone recharges for AI agents, at the live price in shielded Zcash, paid with one x402
+call over the Nym mixnet. The code comes back sealed to the buying agent. The shop learns what sold, never who bought it.**
 
 Dozens of projects build shopping agents. Oboro is the shop they buy from.
 
@@ -14,7 +14,8 @@ Dozens of projects build shopping agents. Oboro is the shop they buy from.
    returns the code sealed (X25519 + HKDF-SHA256 + AES-256-GCM) to a key the agent made for that one purchase. If
    Bitrefill fails, the relay refunds to a shielded address the agent named.
 4. **Publish.** `GET /oboro/relay` shows exactly what the relay stores for each sale: product, price, txid, time. It
-   never receives an IP address, a Nym address, a payer address, an account, an email or a phone number.
+   never receives an IP address, a Nym address, a payer address, an account or an email. A phone recharge can't work
+   without the number, so the relay passes it to Bitrefill and keeps only its last 2 digits.
 
 | Any agent can shop here | How | Where |
 |---|---|---|
@@ -69,9 +70,25 @@ purchase and the gateway pays Bitrefill from its store credits (real money, smal
 
 ## Demo
 
-### Relay film (8 Nov 2026, filmed live)
+### Relay film v2: recharge + gift card (8 Nov 2026, filmed live)
 
-Film (1:56; link added when uploaded). One continuous take in the store: the demo agent buys a Blinkit ₹250 card.
+Film (2:03, one continuous store take; sped-up stretches are badged): https://drive.google.com/file/d/1Bo9q09LsEbu-_jKlu80rsxMq_w-9Ojq3/view
+(the same Drive link as the original submission, updated in place; earlier cuts remain in its version history).
+- **Mobile recharge, Jio "1.5GB/Day – 28 Days" (₹299, $3.32)** to a real Jio number typed into a hidden field:
+  262,700 zats at 1,264.13 USD/ZEC, shielded tx
+  [`c96b2a0f…40e8`](https://testnet.zcashexplorer.app/transactions/c96b2a0fdac3d2f8e4cfff74a9869ba4c36daa189dd0ca404fe1cc03498340e8),
+  Bitrefill invoice **`65801822-5b2b-4dfe-b6b1-54248916f84a`** (order `6af0239e0f6e879c018d7f0d`), delivered. The relay's
+  record keeps the number as `••83`; the full number appears nowhere in its ledger or logs.
+- **Gift card, Swiggy Money ₹50 ($0.56):** 44,400 zats, shielded tx
+  [`7cffccb0…e841`](https://testnet.zcashexplorer.app/transactions/7cffccb028f7d0ff81e3fcf38bfeca4019176447ae23017d181bb3d54223e841),
+  Bitrefill invoice **`c4b2fe66-19ff-4b2e-aeae-a29a7cdbd714`** (order `6af0252b0f6e879c018da06d`). The agent opened the
+  sealed code and the store revealed it on request; the film covers it with a solid box because it is a real code.
+- The relay's Bitrefill balance went from $5.97 to $2.11.
+- Hero film: a Gemini Veo clip (its sparkle mark kept); the stills and object renders on the site were generated in ChatGPT.
+
+### Relay film v1 (8 Nov 2026, filmed live)
+
+Film (1:56; it was version 2 of the Drive file above). One continuous take in the store: the demo agent buys a Blinkit ₹250 card.
 - **Quote:** Bitrefill price $2.77 at 1,262.71 USD/ZEC (Kraken) → **219,400 zats**, no markup.
 - **Payment:** one x402 payment over Nym, shielded tx
   [`44d6e793…b971`](https://testnet.zcashexplorer.app/transactions/44d6e7930452493eb3bc923eb1e6de89517acdc7389a0c10596805c74b80b971)

@@ -1,53 +1,110 @@
 {
  "rate": {
-  "usd": 1259.8,
+  "usd": 1262.62,
   "source": "kraken",
-  "at": "2026-11-08T04:31:02.816Z"
+  "at": "2026-11-08T07:43:43.139Z"
  },
- "float_usd": 5.97,
+ "float_usd": 2.11,
  "limits": {
   "max_usd_per_sale": 6,
   "max_usd_per_day": 9,
-  "sold_today_usd": 2.77
+  "sold_today_usd": 6.65
  },
  "products": [
   {
    "product_id": "blink-it-india",
    "name": "Blinkit India",
+   "kind": "card",
    "currency": "INR",
    "in_stock": true,
    "packages": [
     {
      "value": "250",
+     "amount": 250,
      "usd": 2.77,
-     "zats": 219900,
-     "available": true
+     "zats": 219400,
+     "available": false,
+     "reason": "over_daily_limit"
     },
     {
      "value": "500",
+     "amount": 500,
      "usd": 5.54,
-     "zats": 439800,
-     "available": true
+     "zats": 438800,
+     "available": false,
+     "reason": "over_daily_limit"
     }
    ]
   },
   {
    "product_id": "swiggy-money-india",
    "name": "Swiggy Money India",
+   "kind": "card",
    "currency": "INR",
    "in_stock": true,
    "packages": [
     {
-     "value": "250",
-     "usd": 2.77,
-     "zats": 219900,
+     "value": "50",
+     "amount": 50,
+     "usd": 0.56,
+     "zats": 44400,
      "available": true
     },
     {
-     "value": "500",
-     "usd": 5.54,
-     "zats": 439800,
+     "value": "100",
+     "amount": 100,
+     "usd": 1.11,
+     "zats": 88000,
      "available": true
+    },
+    {
+     "value": "250",
+     "amount": 250,
+     "usd": 2.77,
+     "zats": 219400,
+     "available": false,
+     "reason": "over_daily_limit"
+    }
+   ]
+  },
+  {
+   "product_id": "reliance-jio-india-bundles",
+   "name": "Jio Bundles India",
+   "kind": "recharge",
+   "currency": "INR",
+   "in_stock": true,
+   "packages": [
+    {
+     "value": "2GB/Day 5G Plan \u2013 14 Days",
+     "amount": 198,
+     "usd": 2.2,
+     "zats": 174300,
+     "available": false,
+     "reason": "float_empty"
+    },
+    {
+     "value": "1.5GB/Day \u2013 22 Days",
+     "amount": 239,
+     "usd": 2.65,
+     "zats": 209900,
+     "available": false,
+     "reason": "over_daily_limit"
+    },
+    {
+     "value": "1.5GB/Day \u2013 28 Days",
+     "amount": 299,
+     "usd": 3.32,
+     "zats": 263000,
+     "available": false,
+     "reason": "over_daily_limit"
+    },
+    {
+     "value": "2GB/Day 5G Plan \u2013 36 Days",
+     "amount": 450,
+     "usd": 4.99,
+     "zats": 395300,
+     "available": false,
+     "reason": "over_daily_limit"
     }
    ]
   }
@@ -67,6 +124,35 @@
     "created_at": "2026-11-08T04:21:38.906Z",
     "delivered_at": "2026-11-08T04:21:42.499Z",
     "invoice_id": "cb69dc7c-9e28-4574-b560-90448043cd07"
+   },
+   {
+    "name": "Jio Bundles India",
+    "kind": "recharge",
+    "phone_masked": "\u2022\u202283",
+    "value": "1.5GB/Day \u2013 28 Days",
+    "currency": "INR",
+    "usd": 3.32,
+    "zats": 262700,
+    "zec_usd": 1264.13,
+    "txid": "c96b2a0f\u2026498340e8",
+    "status": "delivered",
+    "created_at": "2026-11-08T07:24:12.132Z",
+    "delivered_at": "2026-11-08T07:24:34.714Z",
+    "invoice_id": "65801822-5b2b-4dfe-b6b1-54248916f84a"
+   },
+   {
+    "name": "Swiggy Money India",
+    "kind": "card",
+    "value": "50",
+    "currency": "INR",
+    "usd": 0.56,
+    "zats": 44400,
+    "zec_usd": 1263.56,
+    "txid": "7cffccb0\u20264223e841",
+    "status": "delivered",
+    "created_at": "2026-11-08T07:30:51.060Z",
+    "delivered_at": "2026-11-08T07:30:54.691Z",
+    "invoice_id": "c4b2fe66-19ff-4b2e-aeae-a29a7cdbd714"
    }
   ],
   "relay_knows": [
@@ -80,16 +166,16 @@
    "Nym address",
    "payer address",
    "account",
-   "email",
-   "phone number"
+   "email"
   ],
-  "today": 2.77,
-  "float_usd": 5.97,
+  "recharge_note": "A recharge needs the phone number: the relay passes it to Bitrefill and keeps only the last 2 digits.",
+  "today": 6.65,
+  "float_usd": 2.11,
   "rate": {
-   "usd": 1259.8,
+   "usd": 1262.62,
    "source": "kraken",
-   "at": "2026-11-08T04:31:02.816Z"
+   "at": "2026-11-08T07:43:43.139Z"
   }
  },
- "captured_at": "2026-11-08T04:31:04Z"
+ "captured_at": "2026-11-08T07:43:53Z"
 }
