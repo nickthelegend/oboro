@@ -4,7 +4,7 @@ Node 26, pnpm, strict TypeScript, ESM, Vitest. Install with `pnpm install`.
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm -r test` | 57 SDK unit tests (incl. `createWallet` budget and merchant client, `createGateway`), 22 shop tests (incl. the `bitrefillConnector` interface), 2 MCP tests, 1 gateway test and 5 example shopping-agent tests (fake shop handle and fake model: refusal before payment, over-limit only after an explicit yes, traces, unknown tool, bad JSON); 3 live SDK and 2 live shop tests skip unless enabled |
+| `pnpm -r test` | 99 passing tests: 61 SDK, 26 shop, 3 MCP, 2 gateway, 7 example shopping-agent. Six live tests skip unless enabled (3 SDK, 3 shop). Relay tests cover rate fallback, float cents, quotes and limits, nonce binding, sealing, wallet policy, route validation, and private code files. |
 | `pnpm -r build` | Compile every package, app and example |
 | `pnpm -r typecheck` | Strict typecheck every package, app and example |
 | `pnpm --filter @oboro/gateway setup:gateway` | Export the seller UFVK to `.oboro/seller.ufvk` and create a view-only wallet; both files stay ignored and mode 600 |

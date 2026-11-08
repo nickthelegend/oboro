@@ -19,7 +19,7 @@ const idOf = (v: Json) => str(v.id ?? v._id ?? v.slug);
 const usdOf = (v: Json) => Number(v.usd_price ?? v.price_usd ?? v.payment_price ?? (obj(v.price).usd) ?? NaN);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const INVOICE_PERMIT = Symbol('guardrails_checked');
-const indiaDay = (date: Date) => { const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date); const part = (type: string) => parts.find(p => p.type === type)?.value ?? ''; return `${part('year')}-${part('month')}-${part('day')}`; };
+export const indiaDay = (date: Date) => { const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date); const part = (type: string) => parts.find(p => p.type === type)?.value ?? ''; return `${part('year')}-${part('month')}-${part('day')}`; };
 export function backoffMs(attempt: number, random = Math.random()): number { return Math.min(30_000, 500 * 2 ** attempt) + Math.floor(random * 500); }
 export function parseSearch(raw: unknown): SearchResult[] {
   // REST v2 search returns `data` as a bare array; the CLI wraps results in { products } or { data }.
@@ -57,7 +57,7 @@ export class BitrefillClient {
       if (response.status === 429 && attempt < 5) { await delay(backoffMs(attempt)); continue; }
       let body: unknown; try { body = await response.json(); } catch { throw new ShopError('bitrefill_invalid_json', 'Bitrefill returned invalid JSON', 502); }
       if (!response.ok) { const e = obj(body); throw new ShopError(response.status === 429 ? 'bitrefill_rate_limited' : str(e.status) || 'bitrefill_error', `Bitrefill HTTP ${response.status}`, response.status); }
-      const data = obj(body).data; if (data === undefined) throw new ShopError('bitrefill_invalid_response', 'Bitrefill response lacks data', 502);
+      const data = obj(body).data ?? (path === '/accounts/balance' && obj(body).balance !== undefined ? body : undefined); if (data === undefined) throw new ShopError('bitrefill_invalid_response', 'Bitrefill response lacks data', 502);
       return data;
     }
     throw new ShopError('bitrefill_rate_limited', 'Bitrefill rate limit exhausted', 429);
@@ -65,6 +65,8 @@ export class BitrefillClient {
   private async cached<T>(key: string, fn: () => Promise<T>): Promise<T> { const existing = this.cache.get(key); if (existing && existing.until > Date.now()) return existing.value as T; const value = await fn(); this.cache.set(key, { value, until: Date.now() + 600_000 }); return value; }
   ping() { return this.request('/ping'); }
   balance() { return this.request('/accounts/balance'); }
+  async floatUsd(): Promise<number> { const cached = this.cache.get('float'); if (cached && cached.until > Date.now()) return cached.value as number; const b = obj(await this.balance()); if (str(b.currency).toUpperCase() !== 'USD') throw new ShopError('account_currency_not_usd', 'Bitrefill account currency must be USD', 503); const cents = Number(b.balance); if (!Number.isSafeInteger(cents) || cents < 0) throw new ShopError('bitrefill_invalid_response', 'Invalid Bitrefill balance', 502); const value = cents / 100; this.cache.set('float', { value, until: Date.now() + 30_000 }); return value; }
+  invalidateFloat() { this.cache.delete('float'); }
   searchProducts(q: string, country = 'IN'): Promise<SearchResult[]> { return this.cached(`s:${q}:${country}`, async () => parseSearch(this.key ? await this.request(`/products/search?q=${encodeURIComponent(q)}&country=${encodeURIComponent(country)}`) : await cli(['search-products', '--query', q, '--country', country, '--intent', 'Browse products for a guarded Oboro shop']))); }
   // REST v2 quotes `packages[].price` in the account's primary currency (BTC sats by default). The guardrails need USD,
   // so the REST path refuses unless the account's primary balance is USD; the no-key CLI path returns payment_price in USD.
@@ -181,5 +183,32 @@ export async function fulfil(client: BitrefillClient, guardrails: Guardrails, le
     await delay(options.intervalMs ?? 2_000);
   }
   await ledger.update(txid, { status: 'processing' });
+  throw new ShopError('fulfilment_timeout', 'Bitrefill delivery is still processing', 202);
+}
+export async function fulfilRelay(client: BitrefillClient, ledger: { byTxid(txid: string): Promise<{ status: string; product_id: string; value: string; usd: number; invoice_id?: string } | undefined>; today(): Promise<number> }, txid: string, limits: { maxUsdPerSale: number; maxUsdPerDay: number }, options: { timeoutMs?: number; intervalMs?: number; onInvoice?: (invoice: Invoice) => Promise<void>; onOrders?: (ids: string[]) => Promise<void> } = {}): Promise<{ invoice: Invoice; order: Order }> {
+  const sale = await ledger.byTxid(txid);
+  if (!sale || !['paid', 'buying'].includes(sale.status)) throw new ShopError('purchase_not_reserved', 'Relay sale must be reserved before invoice creation', 409);
+  if (sale.usd > limits.maxUsdPerSale || await ledger.today() > limits.maxUsdPerDay) throw new ShopError('over_daily_limit', 'Relay limit exceeded', 409);
+  if (process.env.OBORO_BITREFILL_LIVE_BUY !== '1') throw new ShopError('setup_required', 'Setup required: OBORO_BITREFILL_LIVE_BUY', 503);
+  if (!client.hasKey()) throw new ShopError('setup_required', 'Setup required: BITREFILL_API_KEY', 503);
+  if (!sale.invoice_id) {
+    const product = await client.getProduct(sale.product_id, true);
+    const pkg = product.packages.find(p => p.value === sale.value);
+    if (!product.in_stock || !pkg || pkg.usd !== sale.usd) throw new ShopError('price_changed', 'Package changed since payment', 409);
+    if (await client.floatUsd() < sale.usd) throw new ShopError('float_empty', 'Relay float is insufficient', 409);
+  }
+  const value = /^\d+(?:\.\d+)?$/.test(sale.value) ? Number(sale.value) : sale.value;
+  const invoice = sale.invoice_id ? await client.getInvoice(sale.invoice_id) : await client.createInvoice({ products: [{ product_id: sale.product_id, ...pkgRef(sale.product_id, value), quantity: 1 }], payment_method: 'balance', auto_pay: true }, INVOICE_PERMIT);
+  if (!sale.invoice_id) client.invalidateFloat();
+  await options.onInvoice?.(invoice);
+  const deadline = Date.now() + (options.timeoutMs ?? 300_000);
+  while (Date.now() < deadline) {
+    const current = await client.getInvoice(invoice.id);
+    if (current.status === 'expired') throw new ShopError('invoice_expired', 'Bitrefill invoice expired', 502);
+    const id = current.orders?.[0]?.id;
+    if (id) { await options.onOrders?.(current.orders.map(o => o.id)); const order = await client.getOrder(id); const state = classify(current, order); if (state === 'delivered') return { invoice: current, order }; if (state !== 'poll') throw new ShopError(`purchase_${state}`, `Bitrefill purchase ${state}`, 502); }
+    else { const state = classify(current); if (state !== 'poll') throw new ShopError(`invoice_${state}`, `Bitrefill invoice ${state}`, 502); }
+    await delay(options.intervalMs ?? 2_000);
+  }
   throw new ShopError('fulfilment_timeout', 'Bitrefill delivery is still processing', 202);
 }

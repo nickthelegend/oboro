@@ -5,12 +5,12 @@ import type { Verification } from './verifier.js';
 import { addressPrefix, networkFor, resolveChain, type Network } from './chain.js';
 
 export interface LedgerEntry { ts: string; path: string; priceZats: number; txid?: string; height?: number; status: string; viaMixnet: boolean; sellerSaw: { ip: '127.0.0.1' | 'direct'; payerAddress: null } }
-interface NonceState { path: string; priceZats: number; expiresAt: string; redeemedTxid?: string; claimedTxid?: string; claimedAt?: string }
+interface NonceState { path: string; priceZats: number; expiresAt: string; binding?: string; redeemedTxid?: string; claimedTxid?: string; claimedAt?: string }
 // A challenge's expiresAt is the deadline to *submit* a payment. The first X-PAYMENT before it claims the nonce for that
 // txid, and the same txid may keep retrying while the note is mined and seen (up to SETTLE_WINDOW_MS after the claim).
 const SETTLE_WINDOW_MS = 2 * 60 * 60_000;
 interface State { nonces: Record<string, NonceState>; txids: Record<string, string>; ledger: LedgerEntry[] }
-export interface PaywallRequest { path: string; priceZats: number; description: string; paymentHeader?: string; viaMixnet: boolean }
+export interface PaywallRequest { path: string; priceZats: number; description: string; paymentHeader?: string; viaMixnet: boolean; binding?: string; expiresAt?: string }
 export type PaywallDecision = { authorized: true; headers: Record<string, string> } | { authorized: false; status: 402; body: Challenge | { error: string }; headers: Record<string, string> };
 type Verifier = { find(txid: string, nonce: string, minZats: number): Promise<Verification> };
 type RequestHandler = (req: { path: string; get(name: string): string | undefined }, res: { status(code: number): { json(body: unknown): void }; set(name: string, value: string): void }, next: (error?: unknown) => void) => void;
@@ -29,12 +29,14 @@ export function createPaywall(options: { payTo: string; verifier: Verifier; stat
   };
   // The core handles data only. The adapter below applies its decision to Express-compatible HTTP objects.
   async function authorize(input: PaywallRequest): Promise<PaywallDecision> {
-    const { path, priceZats, description, paymentHeader, viaMixnet } = input;
+    const { path, priceZats, description, paymentHeader, viaMixnet, binding, expiresAt } = input;
     if (!Number.isSafeInteger(priceZats) || priceZats <= 0) throw new OboroError('invalid_price', 'Invalid price');
     const base = { ts: new Date().toISOString(), path, priceZats, viaMixnet, sellerSaw: { ip: viaMixnet ? '127.0.0.1' : 'direct', payerAddress: null } } as const;
     if (!paymentHeader) {
-      const challenge = buildChallenge(options.payTo, path, priceZats, description, undefined, undefined, undefined, options.network);
-      await transact(s => { s.nonces[challenge.accepts[0].extra.nonce] = { path, priceZats, expiresAt: challenge.accepts[0].extra.expiresAt }; s.ledger.push({ ...base, status: 'payment_required' }); });
+      const deadline = expiresAt ? new Date(Math.min(Date.now() + 900_000, Date.parse(expiresAt))).toISOString() : undefined;
+      if (deadline && Date.parse(deadline) <= Date.now()) return denied('quote_expired');
+      const challenge = buildChallenge(options.payTo, path, priceZats, description, undefined, deadline, undefined, options.network);
+      await transact(s => { s.nonces[challenge.accepts[0].extra.nonce] = { path, priceZats, binding, expiresAt: challenge.accepts[0].extra.expiresAt }; s.ledger.push({ ...base, status: 'payment_required' }); });
       return { authorized: false, status: 402, body: challenge, headers: {} };
     }
     let payment;
@@ -43,7 +45,9 @@ export function createPaywall(options: { payTo: string; verifier: Verifier; stat
     const { txid, nonce } = payment.payload;
     const check = await transact(s => {
       const n = s.nonces[nonce];
-      if (!n || n.path !== path || n.priceZats !== priceZats) return 'nonce_unknown';
+      if (!n || n.path !== path) return 'nonce_unknown';
+      if (n.binding !== binding) return 'nonce_binding_mismatch';
+      if (n.priceZats !== priceZats) return 'nonce_unknown';
       if (n.redeemedTxid) return 'nonce_reused';
       if (s.txids[txid]) return 'txid_reused';
       if (n.claimedTxid && n.claimedTxid !== txid) return 'nonce_claimed';
@@ -94,5 +98,15 @@ export function createPaywall(options: { payTo: string; verifier: Verifier; stat
       } catch (error) { next(error); }
     };
   }
-  return { authorize, price, ledger: async () => (await readJson<State>(options.stateFile, { nonces: {}, txids: {}, ledger: [] })).ledger };
+  function priceFor(resolve: (req: { path: string; body?: any; get(name: string): string | undefined }) => Promise<{ zats: number; description: string; binding: string; expiresAt?: string }>): RequestHandler {
+    return async (req, res, next) => {
+      try {
+        const price = await resolve(req);
+        const decision = await authorize({ path: req.path, priceZats: price.zats, description: price.description, binding: price.binding, expiresAt: price.expiresAt, paymentHeader: req.get('X-PAYMENT'), viaMixnet: req.get('x-oboro-transport') === 'nym-mixnet' });
+        for (const [name, value] of Object.entries(decision.headers)) res.set(name, value);
+        if (decision.authorized) next(); else res.status(decision.status).json(decision.body);
+      } catch (error) { next(error); }
+    };
+  }
+  return { authorize, price, priceFor, ledger: async () => (await readJson<State>(options.stateFile, { nonces: {}, txids: {}, ledger: [] })).ledger };
 }

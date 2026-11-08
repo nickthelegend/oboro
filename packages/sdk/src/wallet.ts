@@ -1,4 +1,5 @@
 import { createAgent, type AgentOptions } from './agent.js';
+import { createCards } from './cards.js';
 
 export interface WalletBudget {
   maxPerPaymentZats: number;
@@ -47,5 +48,5 @@ export function createWallet(options: AgentOptions) {
       receipt: (id: string) => get<MerchantReceiptResult>(`/v1/shop/receipt/${encodeURIComponent(id)}`)
     };
   }
-  return { ...agent, budget, merchant };
+  return { ...agent, budget, merchant, cards: (relayNymAddress: string) => createCards(agent.fetch, relayNymAddress) };
 }

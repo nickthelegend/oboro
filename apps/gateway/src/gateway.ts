@@ -2,8 +2,9 @@ import './env.js';
 import express from 'express';
 import { createGateway, required, runZingo, ZingoViewVerifier, ZingoWallet } from 'oboro';
 import { repoPath } from './env.js';
-import { bitrefillConnector, Guardrails, ShopLedger } from '@oboro/shop';
+import { bitrefillConnector, Guardrails, Relay, RelayLedger, ShopLedger, ShopError } from '@oboro/shop';
 import { mountShop } from './shop-routes.js';
+import { mountRelay } from './relay-routes.js';
 
 const chain = process.env.OBORO_CHAIN === 'mainnet' ? 'mainnet' : 'testnet';
 const network = chain === 'mainnet' ? 'zcash-mainnet' : 'zcash-testnet';
@@ -34,7 +35,8 @@ app.get('/oboro/ledger', async (_req, res, next) => {
 });
 // Bitrefill shop: free catalog, a paid x402 purchase authorisation, a masked ledger for the console.
 mountShop(app, { paywall, connector: bitrefillConnector(), guardrails: new Guardrails(), ledger: new ShopLedger(repoPath(process.env.OBORO_SHOP_LEDGER ?? '.oboro/shop.json')) });
-app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error.message); res.status(500).json({ error: 'internal_error' }); });
+mountRelay(app, { paywall, relay: new Relay(undefined, new RelayLedger(repoPath(process.env.OBORO_RELAY_LEDGER ?? '.oboro/relay.json'))), sellerWallet: wallet });
+app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => { if (error instanceof ShopError) return res.status(error.httpStatus).json({ code: error.code, error: error.message }); console.error(error.message); res.status(500).json({ error: 'internal_error' }); });
 const server = app.listen(7420, '127.0.0.1', () => console.log(JSON.stringify({ agent: 'gateway', listening: '127.0.0.1:7420' })));
 process.on('SIGTERM', () => server.close());
 process.on('SIGINT', () => server.close());

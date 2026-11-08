@@ -13,7 +13,7 @@ const wallet = createWallet({
     allowRecipients: [address],
   },
 });
-const agent = createShoppingAgent({ shop: wallet.merchant(address), budget: wallet.budget });
+const agent = createShoppingAgent({ relay: wallet.cards(address), budget: wallet.budget });
 const input = createInterface({ input: process.stdin, output: process.stdout });
 let sessionId = '';
 try {

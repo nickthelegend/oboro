@@ -20,6 +20,34 @@ async function fixture() {
   return { wall, call, stateFile, setResult: (v: typeof result) => { result = v; }, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 describe('paywall replay and verification state machine (unit only)', () => {
+  it('binds dynamic nonce to quote and caps expiry', async () => {
+    const f = await fixture();
+    try {
+      const expiresAt = new Date(Date.now() + 60_000).toISOString();
+      const first = await f.wall.authorize({ path: '/cards/buy', priceZats: 1_000_000, description: 'card', binding: 'quote-a', expiresAt, viaMixnet: true });
+      if (first.authorized) throw Error('Expected challenge');
+      const nonce = 'accepts' in first.body ? first.body.accepts[0].extra.nonce : '';
+      expect('accepts' in first.body && first.body.accepts[0].extra.expiresAt).toBe(expiresAt);
+      const wrong = await f.wall.authorize({ path: '/cards/buy', priceZats: 1_000_000, description: 'card', binding: 'quote-b', expiresAt, viaMixnet: true, paymentHeader: encodePayment(txid, nonce) });
+      expect(wrong).toMatchObject({ authorized: false, body: { error: 'nonce_binding_mismatch' } });
+    } finally { await f.cleanup(); }
+  });
+  it('resolves priceFor per request and refuses a different quote on retry', async () => {
+    const f = await fixture();
+    try {
+      const handler = f.wall.priceFor(async req => ({ zats: 2_000, description: 'card', binding: req.body.quote_id }));
+      const invoke = async (quote_id: string, header?: string) => {
+        let body: any; let status = 200;
+        const req = { path: '/cards/buy', body: { quote_id }, get: (name: string) => name === 'X-PAYMENT' ? header : undefined };
+        const res = { status: (n: number) => { status = n; return res; }, json: (v: unknown) => { body = v; }, set: () => {} };
+        await handler(req, res, () => {});
+        return { body, status };
+      };
+      const first = await invoke('a');
+      const nonce = first.body.accepts[0].extra.nonce;
+      expect((await invoke('b', encodePayment(txid, nonce))).body.error).toBe('nonce_binding_mismatch');
+    } finally { await f.cleanup(); }
+  });
   it('refuses mainnet without an explicit OBORO_CHAIN=mainnet', () => {
     const old = process.env.OBORO_CHAIN;
     delete process.env.OBORO_CHAIN;

@@ -1,79 +1,43 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createShoppingAgent, type Complete, type ShopHandle } from '../agent.js';
-
-const rules = { ledger: [], setup: [], today: { usd: 0, count: 0 }, guardrails: {
-  allow: [{ product_id: 'swiggy-money-india', values: ['50'] }],
-  maxUsdPerPurchase: 1, maxUsdPerDay: 10, maxPurchasesPerDay: 3,
-} };
-function fixture(usd = 0.5) {
-  const buy = vi.fn(async () => ({ status: 'processing' as const, receipt_id: 'receipt-1', run_id: 'run-1' }));
-  const shop: ShopHandle = {
-    rules: vi.fn(async () => rules), search: vi.fn(async () => ({ products: [] })),
-    product: vi.fn(async () => ({ id: 'swiggy-money-india', name: 'Swiggy', in_stock: true,
-      currency: 'INR', packages: [{ value: '50', usd, currency: 'INR' }] })),
-    buy, receipt: vi.fn(async () => ({ status: 'processing' as const, receipt_id: 'receipt-1' })),
-    progress: vi.fn(() => ({ status: 'running', steps: [{ type: 'paying' }] })),
-  };
-  return { shop, buy };
+import { expect, it, vi } from 'vitest';
+import { confirmed, createShoppingAgent, type Complete, type RelayHandle } from '../agent.js';
+const q = { quote_id: 'a'.repeat(48), product_id: 'blink-it-india', name: 'Blinkit', value: '250', currency: 'INR', usd: 3, zec_usd: 300, rate_source: 'kraken', zats: 1_000_000, created_at: '', expires_at: '' };
+const budget = () => ({ maxPerPaymentZats: 2_000_000, dailyCapZats: 4_000_000, spentTodayZats: 0, remainingTodayZats: 4_000_000 });
+const call = (name: string, args: string) => ({ id: 'one', type: 'function' as const, function: { name, arguments: args } });
+const model = (name: string, args: string) => vi.fn<Complete>().mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call(name, args)] }).mockResolvedValue({ role: 'assistant', content: 'Done.' });
+function fixture() {
+  const buy = vi.fn(async () => ({ status: 'delivered', receipt_id: 'b'.repeat(48), code: { code: 'ABSECRET12CD' } }));
+  const relay: RelayHandle = { catalog: vi.fn(async () => ({ rate: { usd: 300, source: 'kraken', at: '' }, float_usd: 8.74, limits: { max_usd_per_sale: 6, max_usd_per_day: 9, sold_today_usd: 0 }, products: [], setup: [] })), quote: vi.fn(async () => q), buy, receipt: vi.fn(async () => ({ status: 'delivered', receipt_id: 'b'.repeat(48), code: { code: 'ABSECRET12CD' } })) };
+  return { relay, buy };
 }
-const toolCall = (name: string, args: string) => ({ id: 'call-1', type: 'function' as const,
-  function: { name, arguments: args } });
-function model(name: string, args: string) {
-  const complete = vi.fn<Complete>()
-    .mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [toolCall(name, args)] })
-    .mockResolvedValue({ role: 'assistant', content: 'Done.' });
-  return complete;
-}
-const budget = () => ({ maxPerPaymentZats: 50_000, dailyCapZats: 300_000,
-  spentTodayZats: 0, remainingTodayZats: 300_000 });
-
-describe('shopping example', () => {
-  it('refuses an unlisted value before buy', async () => {
-    const { shop, buy } = fixture();
-    const agent = createShoppingAgent({ shop, budget, complete: model('buy',
-      '{"product_id":"swiggy-money-india","value":"100"}') });
-    const result = await agent.chat('', 'Buy the 100 value');
-    expect(buy).not.toHaveBeenCalled();
-    expect(result.turns.at(-1)?.tools?.[0]).toMatchObject({ ok: false, summary: 'package unavailable' });
-  });
-  it('parks an over-cap request only after owner confirmation', async () => {
-    const { shop, buy } = fixture(2);
-    const first = createShoppingAgent({ shop, budget, complete: model('buy',
-      '{"product_id":"swiggy-money-india","value":"50","request_approval":true}') });
-    const initial = await first.chat('', 'Buy the 50 value');
-    expect(buy).not.toHaveBeenCalled();
-    expect(initial.turns.at(-1)?.tools?.[0]?.summary).toContain('nothing paid');
-    expect(initial.turns.at(-1)?.tools?.[0]?.summary).toContain('over the limit');
-    const confirm = model('buy', '{"product_id":"swiggy-money-india","value":"50","request_approval":true}');
-    const session = createShoppingAgent({ shop, budget, complete: vi.fn<Complete>()
-      .mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [toolCall('buy',
-        '{"product_id":"swiggy-money-india","value":"50"}')] })
-      .mockResolvedValueOnce({ role: 'assistant', content: 'Please confirm.' })
-      .mockImplementation(confirm) });
-    const asked = await session.chat('', 'Buy 50');
-    await session.chat(asked.sessionId, 'Yes, go ahead anyway');
-    expect(buy).toHaveBeenCalledTimes(1);
-  });
-  it('maps tool traces and run id', async () => {
-    const { shop } = fixture();
-    const agent = createShoppingAgent({ shop, budget, complete: model('buy',
-      '{"product_id":"swiggy-money-india","value":"50"}') });
-    const result = await agent.chat('', 'Buy 50');
-    expect(result.turns.at(-1)).toMatchObject({ runId: 'run-1', tools: [
-      { name: 'buy', args: { value: '50' }, ok: true },
-    ] });
-  });
-  it('returns an unknown tool trace', async () => {
-    const { shop } = fixture();
-    const agent = createShoppingAgent({ shop, budget, complete: model('approve', '{}') });
-    expect((await agent.chat('', 'approve')).turns.at(-1)?.tools?.[0])
-      .toMatchObject({ name: 'approve', ok: false, summary: 'unknown tool' });
-  });
-  it('reports bad JSON args without calling shop', async () => {
-    const { shop, buy } = fixture();
-    const agent = createShoppingAgent({ shop, budget, complete: model('buy', '{bad') });
-    expect((await agent.chat('', 'buy')).turns.at(-1)?.tools?.[0])
-      .toMatchObject({ ok: false, summary: 'invalid JSON arguments' });
-    expect(buy).not.toHaveBeenCalled();
-  });
+it('quotes the rupee value and real ZEC price', async () => {
+  const { relay } = fixture(); const a = createShoppingAgent({ relay, budget, complete: model('quote', '{"product_id":"blink-it-india","value":"250"}') });
+  const turn = (await a.chat('', 'Quote Blinkit 250')).turns.at(-1);
+  expect(turn?.tools?.[0]?.summary).toContain('₹250 · 1000000 zats');
+  expect(turn?.text).toContain('₹250 costs 0.01000000 ZEC');
 });
+it('does not buy in the same turn that first presents a quote', async () => {
+  const { relay, buy } = fixture();
+  const complete = vi.fn<Complete>().mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('quote', '{"product_id":"blink-it-india","value":"250"}')] }).mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('buy', `{"quote_id":"${q.quote_id}"}`)] }).mockResolvedValue({ role: 'assistant', content: 'Done.' });
+  const a = createShoppingAgent({ relay, budget, complete }); const result = await a.chat('', 'Yes, buy Blinkit 250');
+  expect(result.turns.at(-1)?.tools?.[1]).toMatchObject({ ok: false, summary: 'show the ZEC price and rupee value first' });
+  expect(buy).not.toHaveBeenCalled();
+});
+it('refuses buy without a prior quote', async () => {
+  const { relay, buy } = fixture(); const a = createShoppingAgent({ relay, budget, complete: model('buy', `{"quote_id":"${q.quote_id}"}`) });
+  expect((await a.chat('', 'Buy it')).turns.at(-1)?.tools?.[0]).toMatchObject({ ok: false, summary: 'quote required' }); expect(buy).not.toHaveBeenCalled();
+});
+it('requires explicit yes in the latest owner message', async () => {
+  const { relay, buy } = fixture(); const complete = vi.fn<Complete>().mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('quote', '{"product_id":"blink-it-india","value":"250"}')] }).mockResolvedValueOnce({ role: 'assistant', content: '₹250 costs 1000000 zats. Confirm?' }).mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('buy', `{"quote_id":"${q.quote_id}"}`)] }).mockResolvedValue({ role: 'assistant', content: 'Done.' });
+  const a = createShoppingAgent({ relay, budget, complete }); const first = await a.chat('', 'Buy Blinkit 250'); expect(buy).not.toHaveBeenCalled();
+  await a.chat(first.sessionId, 'Yes, go ahead'); expect(buy).toHaveBeenCalledTimes(1);
+});
+it('masks code in model tool output', async () => {
+  const { relay } = fixture(); const complete = vi.fn<Complete>().mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('receipt', '{"receipt_id":"r"}')] }).mockResolvedValue({ role: 'assistant', content: 'Done.' });
+  const a = createShoppingAgent({ relay, budget, complete }); await a.chat('', 'Check receipt');
+  expect(JSON.stringify(complete.mock.calls)).not.toContain('ABSECRET12CD'); expect(JSON.stringify(complete.mock.calls)).toContain('AB********CD');
+});
+it('reports bad JSON without buying', async () => {
+  const { relay, buy } = fixture(); const a = createShoppingAgent({ relay, budget, complete: model('buy', '{bad') });
+  expect((await a.chat('', 'buy')).turns.at(-1)?.tools?.[0]).toMatchObject({ ok: false, summary: 'invalid JSON arguments' }); expect(buy).not.toHaveBeenCalled();
+});
+it('does not mistake a negated yes for owner consent', () => { expect(confirmed('Do not buy it, even if I say yes')).toBe(false); expect(confirmed('Yes, do not buy')).toBe(false); expect(confirmed('Yes, go ahead')).toBe(true); });

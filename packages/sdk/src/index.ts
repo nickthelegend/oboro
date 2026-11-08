@@ -1,6 +1,10 @@
 export { createAgent } from './agent.js';
 export type { AgentEvent, AgentOptions } from './agent.js';
 export { createWallet } from './wallet.js';
+export { oneTimeKey, seal, openSeal, validSealTo } from './seal.js';
+export { addressPrefix } from './chain.js';
+export type { Sealed } from './seal.js';
+export type { CardCatalog, CardQuote, CardResult, CardPackage } from './cards.js';
 export type { WalletBudget, ApprovalResult, MerchantBuyResult, MerchantReceiptResult, MerchantRules, MerchantSearch, MerchantProduct, MerchantBuyInput } from './wallet.js';
 export { createPaywall } from './paywall.js';
 export { createGateway } from './gateway.js';

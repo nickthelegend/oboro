@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createWallet, ZingoWallet, OboroError, type AgentEvent } from 'oboro';
-import { createShoppingAgent, type ShopHandle } from '@oboro/example-shopping-agent';
+import { createShoppingAgent, type RelayHandle } from '@oboro/example-shopping-agent';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../..');
@@ -404,29 +404,72 @@ app.post('/api/shop/run', async (req, res) => {
 });
 
 
-// The example agent uses a merchant handle backed by live Nym reads and the UI's existing purchase runner.
-async function shopRead<T>(path: string): Promise<T> {
-    const gateway = await sellerNymAddress();
-    if (!gateway) throw new Error('the merchant gateway’s Nym gate is not running');
-    const response = await viaNym(gateway, path);
-    if (response.status !== 200) throw new Error(`gateway answered HTTP ${response.status}`);
-    return { ...response.body, mixMs: response.mixMs } as T;
+type RelayRun = { stage: 'quote' | 'paying' | 'paid' | 'verifying' | 'buying' | 'delivered' | 'failed'; quote?: unknown; txid?: string; events: { at: string; type: string; text: string }[]; result?: { receipt_id: string; invoice_id?: string; order_id?: string; code_masked?: Record<string, string> }; error?: string; code?: Record<string, string> };
+const relayRuns = new Map<string, RelayRun>();
+const localOnly = (ip?: string) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip ?? '');
+function buyerCards(gateway: string, onEvent?: (e: AgentEvent) => void) {
+  const dir = process.env.OBORO_BUYER_WALLET_DIR;
+  if (!dir) throw new Error('Setup required: OBORO_BUYER_WALLET_DIR');
+  return createWallet({ tunnelUrl: TUNNEL, wallet: new ZingoWallet({ dataDir: dir, chain: CHAIN }),
+    policy: { maxPerRequestZats: MAX_PER, dailyCapZats: DAILY, allowRecipients: [gateway] },
+    spendFile: SPEND_FILE, onEvent }).cards(gateway);
 }
-const shop: ShopHandle = {
-  rules: () => shopRead('/oboro/shop'),
-  search: (query) => shopRead(`/v1/shop/search?q=${encodeURIComponent(query)}`),
-  product: (id) => shopRead(`/v1/shop/product/${encodeURIComponent(id)}`),
-  buy: async ({ product_id, value }) => {
-    const result = await launchShopRun(product_id, value, 'agent');
-    if (!result.run) throw new Error(result.error ?? `purchase failed (${result.status})`);
-    return { status: 'processing', receipt_id: result.run.id, run_id: result.run.id };
-  },
-  receipt: (id) => shopRead(`/v1/shop/receipt/${encodeURIComponent(id)}`),
-  progress: (id) => shopRuns.find((r) => r.id === id),
+app.get('/api/relay', async (_req, res) => {
+  try {
+    const gateway = await sellerNymAddress();
+    if (!gateway) return res.status(503).json({ setup: ['OBORO_SELLER_NYM_ADDRESS'], error: 'Relay Nym address unavailable' });
+    const [catalog, relay] = await Promise.all([viaNym(gateway, '/v1/cards/catalog'), viaNym(gateway, '/oboro/relay')]);
+    if (catalog.status !== 200 || relay.status !== 200) return res.status(503).json({ setup: catalog.body.setup ?? [], error: catalog.body.error ?? relay.body.error ?? 'Relay unavailable' });
+    res.json({ ...catalog.body, relay: relay.body });
+  } catch (e) { res.status(503).json({ setup: [], error: errMsg(e) }); }
+});
+app.post('/api/relay/buy', async (req, res) => {
+  if (!localOnly(req.socket.remoteAddress)) return res.status(403).json({ error: 'Local only' });
+  const product = req.body?.product_id, value = req.body?.value;
+  if (typeof product !== 'string' || !/^[a-z0-9-]{1,100}$/.test(product) || !(typeof value === 'string' || typeof value === 'number')) return res.status(400).json({ error: 'Invalid product or value' });
+  const gateway = await sellerNymAddress();
+  if (!gateway) return res.status(503).json({ error: 'Setup required: OBORO_SELLER_NYM_ADDRESS' });
+  const id = randomUUID(); const run: RelayRun = { stage: 'quote', events: [] }; relayRuns.set(id, run);
+  const emit = (type: string, text: string) => { run.events.push({ at: new Date().toISOString(), type, text }); };
+  const cards = buyerCards(gateway, e => {
+    if (e.type === 'payment_required') { run.stage = 'paying'; emit(e.type, `Payment required: ${e.amountZats} zats`); }
+    if (e.type === 'paying') { run.stage = 'paying'; emit(e.type, 'Sending shielded payment'); }
+    if (e.type === 'paid') { run.stage = 'paid'; run.txid = e.txid; emit(e.type, 'Payment broadcast'); }
+    if (e.type === 'pending') { run.stage = 'verifying'; emit(e.type, 'Waiting for confirmation'); }
+    if (e.type === 'settled') { run.stage = 'buying'; emit(e.type, 'Payment verified; buying card'); }
+  });
+  void (async () => {
+    try {
+      const q = await cards.quote(product, value); run.quote = q; emit('quote', `₹${q.value} costs ${q.zats} zats`);
+      const buyer = new ZingoWallet({ dataDir: process.env.OBORO_BUYER_WALLET_DIR!, chain: CHAIN });
+      const result = await cards.buy(q.quote_id, { refundTo: await buyer.unifiedAddress() });
+      run.txid = result.txid ?? run.txid; run.stage = result.status === 'delivered' ? 'delivered' : result.status === 'buying' ? 'buying' : 'failed';
+      run.code = result.code; run.result = { receipt_id: result.receipt_id, invoice_id: result.invoice_id, order_id: result.order_id, code_masked: maskRedemption(result.code) };
+      emit(result.status, result.status === 'delivered' ? 'Card delivered' : 'Card pending or failed');
+    } catch (e) { run.stage = 'failed'; run.error = errMsg(e); emit('failed', run.error); }
+  })();
+  res.json({ run_id: id });
+});
+app.get('/api/relay/runs/:id', (req, res) => {
+  const run = relayRuns.get(String(req.params.id)); if (!run) return res.status(404).json({ error: 'Run not found' });
+  const { code: _code, ...safe } = run; res.json(safe);
+});
+app.get('/api/relay/runs/:id/code', (req, res) => {
+  if (!localOnly(req.socket.remoteAddress)) return res.status(403).json({ error: 'Local only' });
+  const code = relayRuns.get(String(req.params.id))?.code; if (!code) return res.status(404).json({ error: 'Code unavailable' });
+  res.json(code);
+});
+let agentCards: ReturnType<typeof buyerCards> | undefined;
+async function handleCards() { const gateway = await sellerNymAddress(); if (!gateway) throw new Error('Setup required: OBORO_SELLER_NYM_ADDRESS'); return agentCards ??= buyerCards(gateway); }
+const relay: RelayHandle = {
+  catalog: async () => (await handleCards()).catalog(),
+  quote: async (product_id, value) => (await handleCards()).quote(product_id, value),
+  buy: async (quote_id) => (await handleCards()).buy(quote_id),
+  receipt: async (id) => (await handleCards()).receipt(id),
 };
 const exampleAgent = createShoppingAgent({
-  shop,
-  budget: () => ({ balanceZats: balanceCache.zats, spentTodayZats: spentToday(),
+  relay,
+  budget: () => ({ spentTodayZats: spentToday(),
     remainingTodayZats: Math.max(0, DAILY - spentToday()), dailyCapZats: DAILY, maxPerPaymentZats: MAX_PER }),
 });
 let chatBusy = false;

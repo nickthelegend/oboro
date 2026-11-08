@@ -1,6 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createWallet, required, ZingoWallet } from 'oboro';
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import type { CardResult } from 'oboro';
 
 type ShopReply = Record<string, unknown>;
 const shopUrl = (path: string) => `nym://${required('OBORO_SELLER_NYM_ADDRESS')}${path}`;
@@ -36,9 +39,22 @@ function configuredAgent() {
     spendFile: process.env.OBORO_SPEND_FILE
   });
 }
+let cardHandle: ReturnType<ReturnType<typeof createWallet>['cards']> | undefined;
+const cards = () => cardHandle ??= configuredAgent().cards(required('OBORO_SELLER_NYM_ADDRESS'));
+export async function cardResult(result: CardResult, dir = process.env.OBORO_CARDS_DIR ?? '.oboro/cards') {
+  const { code, ...safe } = result;
+  if (!code) return safe;
+  if (!/^[a-f0-9]{48}$/.test(result.receipt_id)) throw new Error('Invalid receipt ID');
+  const directory = resolve(dir); await mkdir(directory, { recursive: true, mode: 0o700 }); await chmod(directory, 0o700);
+  const path = join(directory, `${result.receipt_id}.json`);
+  try { await writeFile(path, JSON.stringify(code), { mode: 0o600, flag: 'wx' }); }
+  catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
+  return { ...safe, code_masked: maskRedemption(code), code_path: path };
+}
 export function createMcpServer() {
   const server = new McpServer({ name: '@oboro/mcp', version: '0.1.0' });
   server.registerTool('oboro_fetch', { description: 'Fetch a nym:// resource and pay with shielded testnet ZEC within policy', inputSchema: { url: z.string(), method: z.string().optional(), body: z.string().optional() } }, async ({ url, method, body }) => {
+    if (/\/v1\/cards\/(buy|receipt)(?:\/|\?|$)/.test(url)) return toolResult({ code: 'use_cards_tools', error: 'Use the card tools so redemption stays out of model context' }, true);
     const response = await configuredAgent().fetch(url, { method: method ?? 'GET', body });
     const text = (await response.text()).slice(0, 8192);
     let txid: string | undefined;
@@ -89,5 +105,9 @@ export function createMcpServer() {
     }
     return purchaseResult(statusCode, body);
   });
+  server.registerTool('oboro_cards_catalog', { description: 'Show relay gift cards, live ZEC prices, float and limits', inputSchema: {} }, async () => toolResult(await cards().catalog()));
+  server.registerTool('oboro_cards_quote', { description: 'Get a ten-minute gift-card quote', inputSchema: { product_id: z.string(), value: z.union([z.string(), z.number()]) } }, async ({ product_id, value }) => toolResult(await cards().quote(product_id, value)));
+  server.registerTool('oboro_cards_buy', { description: 'Pay the exact ZEC price and buy a card. Code is saved locally and masked in model context.', inputSchema: { quote_id: z.string().regex(/^[a-f0-9]{48}$/), refund_to: z.string().optional() } }, async ({ quote_id, refund_to }) => toolResult(await cardResult(await cards().buy(quote_id, { refundTo: refund_to }))));
+  server.registerTool('oboro_cards_receipt', { description: 'Check a card receipt; code is saved locally and masked in model context.', inputSchema: { receipt_id: z.string().regex(/^[a-f0-9]{48}$/) } }, async ({ receipt_id }) => toolResult(await cardResult(await cards().receipt(receipt_id))));
   return server;
 }
