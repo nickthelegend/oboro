@@ -1,49 +1,55 @@
-# Oboro 朧: private payments infrastructure
+# Oboro 朧: the shop AI agents buy from
 
-**A wallet SDK, a merchant gateway and commerce connectors that pay in shielded Zcash over the Nym mixnet, plus a
-wallet app where a person keeps the budget.**
+**Real Bitrefill gift cards for AI agents, at the live price in shielded Zcash, paid with one x402 call over the Nym
+mixnet. The code comes back sealed to the buying agent. The shop learns what sold, never who bought it.**
 
-Oboro is infrastructure for private payments by software. A developer adds one SDK and any app, agent or store can pay
-for APIs over x402 and buy real goods, like phone recharges and grocery credit, in shielded Zcash. Every request, 402
-challenge and payment crosses the Nym mixnet, so the merchant never sees the payer's IP, Nym address or wallet. Before
-each spend the wallet checks its policy (payee, per-payment cap, daily cap); anything over a limit waits for a person in
-the wallet app. Merchants accept payments with one gateway that verifies with a viewing key and has no public port.
-Real-world fulfilment runs through commerce connectors; Bitrefill is the first.
+Dozens of projects build shopping agents. Oboro is the shop they buy from.
 
-Agents are not the product: they are clients of the wallet. `examples/` has three of them, built only on the SDK.
+1. **Quote.** An agent asks for a card. The relay takes Bitrefill's live price and converts it at the live ZEC/USD rate
+   (Kraken, CoinGecko fallback). No markup; the quote holds for ten minutes.
+2. **Pay.** The agent pays that full price with one standard x402 payment in shielded Zcash. The request, the 402
+   challenge, the payment broadcast and the paid retry all cross the Nym mixnet; the relay has no public port. The x402
+   price is bound to the quote, so one payment can't be replayed against another quote.
+3. **Deliver.** The relay verifies the payment with a viewing key, buys the card from its own Bitrefill balance, and
+   returns the code sealed (X25519 + HKDF-SHA256 + AES-256-GCM) to a key the agent made for that one purchase. If
+   Bitrefill fails, the relay refunds to a shielded address the agent named.
+4. **Publish.** `GET /oboro/relay` shows exactly what the relay stores for each sale: product, price, txid, time. It
+   never receives an IP address, a Nym address, a payer address, an account, an email or a phone number.
 
-| Layer | What it is | Where |
+| Any agent can shop here | How | Where |
 |---|---|---|
-| **Wallet SDK** | `createWallet()`: x402 `fetch` over Nym, spend policy, budget, `merchant(addr)` to search, buy and get receipts | `packages/sdk` (`oboro`) |
-| **Merchant gateway** | `createGateway()`: x402 paywall that verifies with a viewing key; the reference gateway server has no public port | `packages/sdk`, `apps/gateway` |
-| **Commerce connectors** | `CommerceConnector` interface; `bitrefillConnector()` for recharges, gift cards and top-ups, with caps and approval | `packages/shop` (`@oboro/shop`) |
-| **MCP server** | Any MCP host (Claude, Cursor…) gets the wallet as eight tools | `packages/mcp` (`@oboro/mcp`) |
-| **Nym transport** | `tunnel` (payer side) and `gate` (merchant side) carry HTTP through the mixnet | `crates/oboro-node` (Rust, nym-sdk 1.22.3) |
-| **Wallet app** | Balance, budget, approvals, activity and a "who saw what" receipt, for the person whose money it is | `apps/wallet` |
+| **TypeScript SDK** | `createWallet(...).cards(relay)` → `catalog()`, `quote()`, `buy()`, `receipt()`; opens the sealed code locally | `packages/sdk` (`oboro`) |
+| **Claude Desktop / any MCP host** | `oboro_cards_catalog`, `_quote`, `_buy`, `_receipt`; the code goes to a local 0600 file, the model sees it masked | `packages/mcp`, `examples/mcp-client` |
+| **Chat agent** | An LLM with four tools, one per SDK call; shows the ZEC price and buys only after the owner's yes, checked in code | `examples/shopping-agent` |
 
-| Example (built on the SDK) | What it shows | Where |
+| Piece | What it is | Where |
 |---|---|---|
-| **Shopping agent** | An LLM with five tools, each one SDK call (`shop.rules/search/product/buy/receipt`); over a limit it asks you. Try it in the wallet app at `#/examples`, or run `cli.ts` in a terminal. | `examples/shopping-agent` |
-| **Paid-API agent** | A short script that pays an x402 API per call and decides whether the next call is worth it | `examples/paid-api-agent` |
-| **MCP client** | Claude Desktop config for `@oboro/mcp` | `examples/mcp-client` |
+| **Relay** | Catalog, quotes, quote-bound x402, Bitrefill fulfilment from its float, sealed delivery, refunds, public sales record | `apps/gateway`, `packages/shop` (`@oboro/shop`, [RELAY.md](packages/shop/RELAY.md)) |
+| **x402 paywall** | `createGateway()` / `priceFor()`: verifies shielded payments with a viewing key, one use per nonce and txid | `packages/sdk` |
+| **Nym transport** | `tunnel` (buyer side) and `gate` (relay side) carry HTTP through the mixnet | `crates/oboro-node` (Rust, nym-sdk 1.22.3) |
+| **Website** | Home, store (live catalog priced in ZEC, checkout, sales feed), example agent | `apps/wallet` |
 
 ```ts
 import { createWallet, ZingoWallet } from 'oboro';
 
 const wallet = createWallet({
-  tunnelUrl: 'http://127.0.0.1:7410',                          // local oboro-node tunnel into Nym
+  tunnelUrl: 'http://127.0.0.1:7410',                            // local oboro-node tunnel into Nym
   wallet: new ZingoWallet({ dataDir: process.env.OBORO_BUYER_WALLET_DIR! }),
-  policy: { maxPerRequestZats: 50_000, dailyCapZats: 300_000, allowRecipients: [MERCHANT] },
+  policy: { maxPerRequestZats: 300_000, dailyCapZats: 600_000, allowRecipients: [RELAY] },
 });
-
-await wallet.fetch(`nym://${MERCHANT}/v1/intel/tip`);            // pays an x402 API, privately
-const shop = wallet.merchant(MERCHANT);                         // a merchant's commerce routes, over Nym
-await shop.buy({ product_id: 'swiggy-money-india', value: '50' }); // buys a real Swiggy Money card
+const cards = wallet.cards(RELAY);                                // the relay's Nym address
+const q = await cards.quote('blink-it-india', 250);               // ₹250 → zats at the live rate
+const card = await cards.buy(q.quote_id, { refundTo: MY_ADDRESS }); // x402 over Nym, sealed delivery
+console.log(card.code);                                           // opened locally
 ```
 
-Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026; restructured into infrastructure + examples on 7 and 8 Nov
-(see the commit history). In the recorded runs below, "the agent" is the example shopping agent holding an Oboro wallet
-and "the gateway" is a merchant running the Oboro gateway with the Bitrefill connector.
+**Honest limits.** On testnet, agents pay in TAZ priced 1:1 at the mainnet ZEC rate; the cards are real and come out
+of the relay's Bitrefill balance, so testnet sales are subsidised. The agent pays first and trusts the relay to deliver
+(refunds soften that). The buyer's wallet sync to the light-wallet server is not yet over Nym. One operator and low
+traffic make timing correlation easier. Selling cards for mainnet ZEC is a compliance question, not a code one.
+
+Built at the Zcash Free Society Hack, Mumbai, 4 Nov 2026, and refocused into the relay on 8 Nov (see the commit
+history). Sections below the relay demo describe the earlier versions and their live runs, kept for the record.
 
 ## Tracks: entered in Both
 
@@ -62,6 +68,19 @@ Honest scope: Bitrefill doesn't take ZEC and has no testnet, so the shielded *te
 purchase and the gateway pays Bitrefill from its store credits (real money, small). We don't claim ZEC paid for the card.
 
 ## Demo
+
+### Relay film (8 Nov 2026, filmed live)
+
+Film (1:56; link added when uploaded). One continuous take in the store: the demo agent buys a Blinkit ₹250 card.
+- **Quote:** Bitrefill price $2.77 at 1,262.71 USD/ZEC (Kraken) → **219,400 zats**, no markup.
+- **Payment:** one x402 payment over Nym, shielded tx
+  [`44d6e793…b971`](https://testnet.zcashexplorer.app/transactions/44d6e7930452493eb3bc923eb1e6de89517acdc7389a0c10596805c74b80b971)
+  (block 4596551, v6, no public inputs or outputs), bound to quote `26bb76d3…`.
+- **Fulfilment:** verified with the relay's viewing key, then Bitrefill invoice
+  **`cb69dc7c-9e28-4574-b560-90448043cd07`** (order `6aeff8d3c5091535d6b42c5a`), delivered 3.6 s after verification. The relay's
+  Bitrefill balance went from $8.74 to $5.97. The code came back sealed to the agent's one-time key; the relay's record
+  keeps it masked.
+- **What the relay stored** (`GET /oboro/relay`): product, price, txid, time, status. Nothing else.
 
 ### Infrastructure film (8 Nov 2026, filmed live)
 
