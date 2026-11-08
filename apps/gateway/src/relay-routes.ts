@@ -13,11 +13,14 @@ export function mountRelay(app: Express, { paywall, relay, sellerWallet }: { pay
   const pending = new Map<string, Promise<void>>();
   const codes = new Map<string, Record<string, unknown>>();
   const refundAddresses = new Map<string, string>();
+  const phoneNumbers = new Map<string, string>();
   const delivery = (sale: RelaySale, sealTo?: string) => {
+    if (sale.kind === 'recharge') return { status: sale.status, kind: 'recharge', phone_masked: sale.phone_masked, receipt_id: sale.receipt_id, invoice_id: sale.invoice_id, order_id: sale.order_ids[0], product: sale.name, value: sale.value, amount: sale.amount, currency: sale.currency, usd: sale.usd, zats: sale.zats, zec_usd: sale.zec_usd, txid: sale.txid };
     const redemption = codes.get(sale.receipt_id);
     return { status: sale.status, receipt_id: sale.receipt_id, invoice_id: sale.invoice_id, order_id: sale.order_ids[0], product: sale.name, value: sale.value, currency: sale.currency, usd: sale.usd, zats: sale.zats, zec_usd: sale.zec_usd, txid: sale.txid, ...(redemption ? sealTo ? { sealed: seal(redemption, sealTo) } : { redemption } : { code_masked: sale.code_masked }) };
   };
   const refund = async (sale: RelaySale) => {
+    phoneNumbers.delete(sale.receipt_id);
     const address = refundAddresses.get(sale.receipt_id); refundAddresses.delete(sale.receipt_id);
     if (!address || sale.zats <= 10_000) { await relay.ledger.update(sale.txid, { status: 'failed', refund_owed: true }); return; }
     try { const { txid } = await sellerWallet.pay(address, sale.zats - 10_000, `oboro:refund-${sale.receipt_id.slice(0, 16)}`); await relay.ledger.update(sale.txid, { status: 'refunded', refund_txid: txid }); }
@@ -27,14 +30,14 @@ export function mountRelay(app: Express, { paywall, relay, sellerWallet }: { pay
     const task = (async () => {
       try {
         await relay.ledger.update(sale.txid, { status: 'buying' });
-        const { invoice, order } = await fulfilRelay(relay.client, relay.ledger, sale.txid, relay.config, { onInvoice: async invoice => { await relay.ledger.update(sale.txid, { invoice_id: invoice.id }); }, onOrders: async ids => { await relay.ledger.update(sale.txid, { order_ids: ids }); } });
+        const { invoice, order } = await fulfilRelay(relay.client, relay.ledger, sale.txid, relay.config, { phoneNumber: phoneNumbers.get(sale.receipt_id), onInvoice: async invoice => { phoneNumbers.delete(sale.receipt_id); await relay.ledger.update(sale.txid, { invoice_id: invoice.id }); }, onOrders: async ids => { await relay.ledger.update(sale.txid, { order_ids: ids }); } });
         await relay.ledger.update(sale.txid, { invoice_id: invoice.id, order_ids: invoice.orders.map(o => o.id) });
-        codes.set(sale.receipt_id, order.redemption_info ?? {});
-        await relay.ledger.delivered(sale.txid, order.id, order.redemption_info);
+        if (sale.kind === 'card') codes.set(sale.receipt_id, order.redemption_info ?? {});
+        await relay.ledger.delivered(sale.txid, order.id, sale.kind === 'card' ? order.redemption_info : undefined);
       } catch (e) {
         // A transport timeout does not prove that Bitrefill did not create or deliver the order.
-        const terminal = e instanceof ShopError && /^(?:purchase_(?:failed|refunded|blocked|denied|payment_error)|invoice_(?:failed|refunded|blocked|denied|payment_error|expired)|price_changed|float_empty|over_daily_limit|setup_required)$/.test(e.code);
-        if (terminal) await refund(sale);
+        const terminal = e instanceof ShopError && /^(?:purchase_(?:failed|refunded|blocked|denied|payment_error)|invoice_(?:failed|refunded|blocked|denied|payment_error|expired)|price_changed|float_empty|over_daily_limit|setup_required|phone_lost)$/.test(e.code);
+        if (terminal) { phoneNumbers.delete(sale.receipt_id); await refund(sale); }
       }
       finally { pending.delete(sale.receipt_id); }
     })();
@@ -48,10 +51,10 @@ export function mountRelay(app: Express, { paywall, relay, sellerWallet }: { pay
     const float = await relay.client.floatUsd();
     const products = await Promise.all(relay.config.catalog.map(async entry => {
       const p = await relay.client.getProduct(entry.product_id, true);
-      return { product_id: p.id, name: p.name, currency: p.currency, in_stock: p.in_stock, packages: entry.values.map(value => {
+      return { product_id: p.id, name: p.name, kind: p.recipient_type === 'phone_number' ? 'recharge' : 'card', currency: p.currency, in_stock: p.in_stock, packages: entry.values.map(value => {
         const pkg = p.packages.find(x => x.value === String(value)); const usd = pkg?.usd ?? 0;
         const reason = !p.in_stock || !pkg ? 'value_not_available' : usd > relay.config.maxUsdPerSale ? 'over_sale_limit' : sold + usd > relay.config.maxUsdPerDay ? 'over_daily_limit' : usd > float ? 'float_empty' : undefined;
-        return { value: String(value), usd, zats: pkg ? usdToZats(usd, rate.usd) : 0, available: !reason, ...(reason ? { reason } : {}) };
+        return { value: String(value), amount: pkg?.amount, usd, zats: pkg ? usdToZats(usd, rate.usd) : 0, available: !reason, ...(reason ? { reason } : {}) };
       }) };
     }));
     res.json({ rate, float_usd: float, limits: { max_usd_per_sale: relay.config.maxUsdPerSale, max_usd_per_day: relay.config.maxUsdPerDay, sold_today_usd: sold }, products, setup });
@@ -66,6 +69,9 @@ export function mountRelay(app: Express, { paywall, relay, sellerWallet }: { pay
     if (!receiptOk(id)) throw new ShopError('invalid_quote', 'Invalid quote ID', 400);
     const q = await relay.ledger.getQuote(id);
     if (!q || (!req.get('X-PAYMENT') && Date.now() >= Date.parse(q.expires_at))) throw new ShopError('quote_expired', 'Quote expired', 410);
+    const phone = req.body?.phone_number;
+    if (q.kind === 'recharge' && (typeof phone !== 'string' || !/^\+[1-9][0-9]{7,14}$/.test(phone))) throw new ShopError('invalid_phone', 'Valid E.164 phone number required', 400);
+    if (q.kind !== 'recharge' && phone !== undefined) throw new ShopError('phone_not_expected', 'Phone number is only for recharges', 400);
     if (!relay.client.hasKey()) throw new ShopError('setup_required', 'Setup required: BITREFILL_API_KEY', 503);
     if (process.env.OBORO_BITREFILL_LIVE_BUY !== '1') throw new ShopError('setup_required', 'Setup required: OBORO_BITREFILL_LIVE_BUY', 503);
     return { zats: q.zats, binding: q.quote_id, expiresAt: q.expires_at, description: `${q.name} ${q.currency} ${q.value} at ${q.zec_usd} USD/ZEC` };
@@ -76,13 +82,15 @@ export function mountRelay(app: Express, { paywall, relay, sellerWallet }: { pay
     const sealTo = req.body.seal_to; if (sealTo !== undefined && !validSealTo(sealTo)) throw new ShopError('invalid_seal_to', 'Invalid X25519 public key', 400);
     const refundTo = req.body.refund_to; if (refundTo !== undefined && (typeof refundTo !== 'string' || !new RegExp(`^${addressPrefix('zcash-testnet')}[a-z0-9]{20,}$`).test(refundTo))) throw new ShopError('invalid_refund_to', 'Invalid testnet unified address', 400);
     const txid = decodePayment(req.get('X-PAYMENT') ?? '').payload.txid;
-    const sale = await relay.ledger.reserve(quote, txid, refundTo, relay.config.maxUsdPerDay);
+    const sale = await relay.ledger.reserve(quote, txid, refundTo, relay.config.maxUsdPerDay, req.body.phone_number);
     if (refundTo) refundAddresses.set(sale.receipt_id, refundTo);
+    if (quote.kind === 'recharge') phoneNumbers.set(sale.receipt_id, req.body.phone_number);
     if (sale.overLimit) { await refund(sale); const current = await relay.ledger.byReceipt(sale.receipt_id); res.status(409).json({ code: 'over_daily_limit', status: current?.status, receipt_id: sale.receipt_id, refund_txid: current?.refund_txid, refund_owed: current?.refund_owed }); return; }
     const task = start(sale);
     await Promise.race([task, wait(25_000)]);
     const current = await relay.ledger.byReceipt(sale.receipt_id);
-    if (current?.status === 'delivered') { res.json(delivery(current, sealTo)); return; }
+    // The relay forgets the code once it has handed it over; its record keeps only the masked copy.
+    if (current?.status === 'delivered') { res.json(delivery(current, sealTo)); codes.delete(sale.receipt_id); return; }
     if (current?.status === 'refunded' || current?.status === 'failed') { res.status(502).json({ status: current.status, receipt_id: sale.receipt_id, refund_txid: current.refund_txid, refund_owed: current.refund_owed }); return; }
     res.status(202).json({ status: 'buying', receipt_id: sale.receipt_id });
   }));
@@ -90,12 +98,12 @@ export function mountRelay(app: Express, { paywall, relay, sellerWallet }: { pay
     const id = String(req.params.id); if (!receiptOk(id)) throw new ShopError('receipt_unknown', 'Receipt not found', 404);
     const sealTo = req.query.seal_to; if (sealTo !== undefined && !validSealTo(sealTo)) throw new ShopError('invalid_seal_to', 'Invalid X25519 public key', 400);
     const sale = await relay.ledger.byReceipt(id); if (!sale) throw new ShopError('receipt_unknown', 'Receipt not found', 404);
-    if (sale.status === 'buying' && sale.invoice_id && !pending.has(id)) start(sale);
+    if (sale.status === 'buying' && !pending.has(id)) start(sale);
     if (sale.status === 'buying' || sale.status === 'paid') { res.status(202).json({ status: 'buying', receipt_id: id }); return; }
     const result = delivery(sale, sealTo); codes.delete(id); res.json(result);
   }));
   app.get('/oboro/relay', asyncRoute(async (_req, res) => {
-    const sales = (await relay.ledger.list()).map(s => ({ name: s.name, value: s.value, currency: s.currency, usd: s.usd, zats: s.zats, zec_usd: s.zec_usd, txid: `${s.txid.slice(0, 8)}…${s.txid.slice(-8)}`, status: s.status, created_at: s.created_at, delivered_at: s.delivered_at, invoice_id: s.invoice_id }));
-    res.json({ sales, relay_knows: ['product', 'price', 'txid', 'time'], relay_never_saw: ['IP address', 'Nym address', 'payer address', 'account', 'email', 'phone number'], today: await relay.ledger.today(), float_usd: relay.client.hasKey() ? await relay.client.floatUsd() : null, rate: await relay.rate() });
+    const sales = (await relay.ledger.list()).map(s => ({ name: s.name, kind: s.kind, ...(s.kind === 'recharge' ? { phone_masked: s.phone_masked } : {}), value: s.value, currency: s.currency, usd: s.usd, zats: s.zats, zec_usd: s.zec_usd, txid: `${s.txid.slice(0, 8)}…${s.txid.slice(-8)}`, status: s.status, created_at: s.created_at, delivered_at: s.delivered_at, invoice_id: s.invoice_id }));
+    res.json({ sales, relay_knows: ['product', 'price', 'txid', 'time'], relay_never_saw: ['IP address', 'Nym address', 'payer address', 'account', 'email'], recharge_note: 'A recharge needs the phone number: the relay passes it to Bitrefill and keeps only the last 2 digits.', today: await relay.ledger.today(), float_usd: relay.client.hasKey() ? await relay.client.floatUsd() : null, rate: await relay.rate() });
   }));
 }

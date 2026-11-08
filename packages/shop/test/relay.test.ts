@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BitrefillClient, Relay, RelayLedger, relayConfigFromEnv, usdToZats, zecUsd } from '../src/index.js';
+import { BitrefillClient, Relay, RelayLedger, fulfilRelay, parseProduct, relayConfigFromEnv, usdToZats, zecUsd } from '../src/index.js';
 
 it('parses real Kraken and CoinGecko response shapes and rounds upward', async () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-08T00:00:00Z'));
@@ -20,6 +20,42 @@ it('parses real Kraken and CoinGecko response shapes and rounds upward', async (
   } finally { vi.useRealTimers(); }
 });
 it('rejects invalid relay configuration', () => expect(() => relayConfigFromEnv({ OBORO_RELAY_CATALOG: '{bad' })).toThrowError());
+it('defaults to card denominations and four named Jio plans', () => {
+  const config = relayConfigFromEnv({});
+  expect(config).toMatchObject({ maxUsdPerSale: 6, maxUsdPerDay: 9 });
+  expect(config.catalog).toEqual([
+    { product_id: 'blink-it-india', values: [250, 500] },
+    { product_id: 'swiggy-money-india', values: [50, 100, 250] },
+    { product_id: 'reliance-jio-india-bundles', values: ['2GB/Day 5G Plan – 14 Days', '1.5GB/Day – 22 Days', '1.5GB/Day – 28 Days', '2GB/Day 5G Plan – 36 Days'] },
+  ]);
+});
+it('quotes a named recharge plan and sends only its masked phone to the ledger', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'oboro-recharge-'));
+  const file = join(dir, 'relay.json');
+  const phone = '+919876543283';
+  const product = parseProduct({ id: 'reliance-jio-india-bundles', name: 'Jio bundles', recipient_type: 'phone_number', currency: 'INR', in_stock: true, packages: [{ id: 'reliance-jio-india-bundles<&>1.5GB/Day – 28 Days', value: '1.5GB/Day – 28 Days', price: 3.32, usd_price: 3.32, amount: 299 }] });
+  const createInvoice = vi.fn(async () => ({ id: 'invoice-1', status: 'paid', orders: [{ id: 'order-1', status: 'delivered' }] }));
+  const client = { hasKey: () => true, getProduct: async () => product, floatUsd: async () => 8.74, createInvoice, invalidateFloat: () => {}, getInvoice: async () => ({ id: 'invoice-1', status: 'paid', orders: [{ id: 'order-1', status: 'delivered' }] }), getOrder: async () => ({ id: 'order-1', status: 'delivered' }) } as unknown as BitrefillClient;
+  const ledger = new RelayLedger(file);
+  const relay = new Relay(client, ledger, { catalog: [{ product_id: product.id, values: ['1.5GB/Day – 28 Days'] }], maxUsdPerSale: 6, maxUsdPerDay: 9 }, async () => ({ usd: 300, source: 'kraken', at: '' }));
+  try {
+    const quote = await relay.quote(product.id, '1.5GB/Day – 28 Days');
+    expect(quote).toMatchObject({ kind: 'recharge', amount: 299, currency: 'INR', usd: 3.32 });
+    const sale = await ledger.reserve(quote, 'b'.repeat(64), undefined, 9, phone);
+    expect(sale.phone_masked).toBe('••83');
+    const { order } = await fulfilRelay(client, ledger, sale.txid, relay.config, { phoneNumber: phone, intervalMs: 0 });
+    expect(order.id).toBe('order-1');
+    expect(createInvoice.mock.calls[0]?.[0]).toMatchObject({ products: [{ product_id: product.id, package_id: `${product.id}<&>1.5GB/Day – 28 Days`, phone_number: phone }] });
+    expect(await readFile(file, 'utf8')).not.toContain(phone);
+    expect(await readFile(file, 'utf8')).toContain('••83');
+    await expect(fulfilRelay(client, ledger, sale.txid, relay.config)).rejects.toMatchObject({ code: 'phone_lost' });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+it.skipIf(process.env.OBORO_LIVE !== '1')('reads the live Jio recharge details without creating an invoice', async () => {
+  const product = await new BitrefillClient().getProduct('reliance-jio-india-bundles', true);
+  expect(product.recipient_type).toBe('phone_number');
+  expect(product.packages).toContainEqual(expect.objectContaining({ value: '1.5GB/Day – 28 Days', amount: 299 }));
+});
 it('interprets Bitrefill USD balance as cents and caches for 30 seconds', async () => {
   const fetcher = vi.fn(async () => new Response(JSON.stringify({ balance: 874, currency: 'USD' })));
   const client = new BitrefillClient('test-key', 'https://example.invalid/v2', fetcher as typeof fetch);

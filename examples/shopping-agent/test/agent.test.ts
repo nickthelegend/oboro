@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { confirmed, createShoppingAgent, type Complete, type RelayHandle } from '../agent.js';
-const q = { quote_id: 'a'.repeat(48), product_id: 'blink-it-india', name: 'Blinkit', value: '250', currency: 'INR', usd: 3, zec_usd: 300, rate_source: 'kraken', zats: 1_000_000, created_at: '', expires_at: '' };
+const q = { quote_id: 'a'.repeat(48), product_id: 'blink-it-india', name: 'Blinkit', kind: 'card' as const, value: '250', currency: 'INR', usd: 3, zec_usd: 300, rate_source: 'kraken', zats: 1_000_000, created_at: '', expires_at: '' };
 const budget = () => ({ maxPerPaymentZats: 2_000_000, dailyCapZats: 4_000_000, spentTodayZats: 0, remainingTodayZats: 4_000_000 });
 const call = (name: string, args: string) => ({ id: 'one', type: 'function' as const, function: { name, arguments: args } });
 const model = (name: string, args: string) => vi.fn<Complete>().mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call(name, args)] }).mockResolvedValue({ role: 'assistant', content: 'Done.' });
@@ -30,6 +30,26 @@ it('requires explicit yes in the latest owner message', async () => {
   const { relay, buy } = fixture(); const complete = vi.fn<Complete>().mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('quote', '{"product_id":"blink-it-india","value":"250"}')] }).mockResolvedValueOnce({ role: 'assistant', content: '₹250 costs 1000000 zats. Confirm?' }).mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('buy', `{"quote_id":"${q.quote_id}"}`)] }).mockResolvedValue({ role: 'assistant', content: 'Done.' });
   const a = createShoppingAgent({ relay, budget, complete }); const first = await a.chat('', 'Buy Blinkit 250'); expect(buy).not.toHaveBeenCalled();
   await a.chat(first.sessionId, 'Yes, go ahead'); expect(buy).toHaveBeenCalledTimes(1);
+});
+it('requires a phone for a confirmed recharge and passes it only after owner approval', async () => {
+  const { relay, buy } = fixture();
+  vi.mocked(relay.quote).mockResolvedValue({ ...q, product_id: 'reliance-jio-india-bundles', name: 'Jio', kind: 'recharge', value: '1.5GB/Day – 28 Days', amount: 299 });
+  const complete = vi.fn<Complete>()
+    .mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('quote', '{"product_id":"reliance-jio-india-bundles","value":"1.5GB/Day – 28 Days"}')] })
+    .mockResolvedValueOnce({ role: 'assistant', content: 'Please confirm.' })
+    .mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('buy', `{"quote_id":"${q.quote_id}"}`)] })
+    .mockResolvedValueOnce({ role: 'assistant', content: 'Please provide the number.' })
+    .mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('buy', `{"quote_id":"${q.quote_id}","phone_number":"+919876543283"}`)] })
+    .mockResolvedValue({ role: 'assistant', content: 'Done.' });
+  const a = createShoppingAgent({ relay, budget, complete });
+  const first = await a.chat('', 'Quote Jio plan');
+  expect(first.turns.at(-1)?.text).toContain('₹299');
+  const second = await a.chat(first.sessionId, 'Yes, buy it');
+  expect(second.turns.at(-1)?.tools?.[0]).toMatchObject({ ok: false, summary: 'ask the owner for a valid international phone number' });
+  expect(buy).not.toHaveBeenCalled();
+  const third = await a.chat(first.sessionId, 'Yes, recharge +919876543283');
+  expect(buy).toHaveBeenCalledWith(q.quote_id, '+919876543283');
+  expect(JSON.stringify(third.turns)).not.toContain('+919876543283');
 });
 it('masks code in model tool output', async () => {
   const { relay } = fixture(); const complete = vi.fn<Complete>().mockResolvedValueOnce({ role: 'assistant', content: null, tool_calls: [call('receipt', '{"receipt_id":"r"}')] }).mockResolvedValue({ role: 'assistant', content: 'Done.' });

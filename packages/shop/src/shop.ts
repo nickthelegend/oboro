@@ -6,8 +6,8 @@ import { dirname } from 'node:path';
 export class ShopError extends Error {
   constructor(public readonly code: string, message: string, public readonly httpStatus = 500) { super(message); this.name = 'ShopError'; }
 }
-export interface Package { value: string; usd: number; currency: string }
-export interface Product { id: string; name: string; in_stock: boolean; currency: string; packages: Package[] }
+export interface Package { value: string; usd: number; currency: string; amount?: number }
+export interface Product { id: string; name: string; in_stock: boolean; currency: string; recipient_type: 'phone_number' | 'none'; packages: Package[] }
 export interface SearchResult { id: string; name: string; in_stock: boolean; currency: string }
 export type Invoice = { id: string; status: string; orders: { id: string; status: string }[] };
 export type Order = { id: string; status: string; redemption_info?: Record<string, unknown> };
@@ -28,9 +28,9 @@ export function parseSearch(raw: unknown): SearchResult[] {
 }
 export function parseProduct(raw: unknown): Product {
   const x = obj(raw); const list = Array.isArray(x.packages) ? x.packages : [];
-  const packages = list.map((item: unknown) => { const p = obj(item); return { value: String(p.value ?? p.package_value ?? ''), usd: usdOf(p), currency: str(p.currency ?? p.package_currency ?? x.currency) }; }).filter((p: Package) => p.value && Number.isFinite(p.usd) && p.usd >= 0);
+  const packages = list.map((item: unknown) => { const p = obj(item); return { value: String(p.value ?? p.package_value ?? ''), usd: usdOf(p), currency: str(p.currency ?? p.package_currency ?? x.currency), ...(typeof p.amount === 'number' && Number.isFinite(p.amount) ? { amount: p.amount } : {}) }; }).filter((p: Package) => p.value && Number.isFinite(p.usd) && p.usd >= 0);
   const id = idOf(x); if (!id) throw new ShopError('invalid_product_response', 'Bitrefill product response lacks an id');
-  return { id, name: str(x.name), in_stock: x.in_stock !== false, currency: str(x.currency), packages };
+  return { id, name: str(x.name), in_stock: x.in_stock !== false, currency: str(x.currency), recipient_type: x.recipient_type === 'phone_number' ? 'phone_number' : 'none', packages };
 }
 async function cli(args: string[], timeoutMs = 25_000): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -109,6 +109,7 @@ export class Guardrails {
 // tell two codes apart without being able to redeem either.
 export function maskCode(value: string): string { return value.length <= 8 ? '*'.repeat(value.length) : `${value.slice(0, 2)}${'*'.repeat(Math.min(12, value.length - 4))}${value.slice(-2)}`; }
 export function maskPhone(value?: string): string | undefined { if (!value) return undefined; const digits = value.replace(/\D/g, ''); return `${'*'.repeat(Math.min(10, Math.max(0, digits.length - 4)))}${digits.slice(-4)}`; }
+export function maskPhoneTail(value: string): string { return `••${value.slice(-2)}`; }
 export function maskRedemption(input: Record<string, unknown> | undefined): Record<string, unknown> | undefined { if (!input) return undefined; return Object.fromEntries(Object.entries(input).map(([k, v]) => [k, typeof v === 'string' ? maskCode(v) : '[redacted]'])); }
 export interface PurchaseRecord { receipt_id: string; txid: string; status: string; product_id: string; value: string; usd: number; phone_masked?: string; invoice_id?: string; order_ids: string[]; code_masked?: Record<string, unknown>; approval_id?: string; approved?: boolean; created_at: string; updated_at: string }
 type LedgerState = { purchases: Record<string, PurchaseRecord> };
@@ -185,12 +186,13 @@ export async function fulfil(client: BitrefillClient, guardrails: Guardrails, le
   await ledger.update(txid, { status: 'processing' });
   throw new ShopError('fulfilment_timeout', 'Bitrefill delivery is still processing', 202);
 }
-export async function fulfilRelay(client: BitrefillClient, ledger: { byTxid(txid: string): Promise<{ status: string; product_id: string; value: string; usd: number; invoice_id?: string } | undefined>; today(): Promise<number> }, txid: string, limits: { maxUsdPerSale: number; maxUsdPerDay: number }, options: { timeoutMs?: number; intervalMs?: number; onInvoice?: (invoice: Invoice) => Promise<void>; onOrders?: (ids: string[]) => Promise<void> } = {}): Promise<{ invoice: Invoice; order: Order }> {
+export async function fulfilRelay(client: BitrefillClient, ledger: { byTxid(txid: string): Promise<{ status: string; product_id: string; value: string; usd: number; kind?: 'card' | 'recharge'; invoice_id?: string } | undefined>; today(): Promise<number> }, txid: string, limits: { maxUsdPerSale: number; maxUsdPerDay: number }, options: { timeoutMs?: number; intervalMs?: number; phoneNumber?: string; onInvoice?: (invoice: Invoice) => Promise<void>; onOrders?: (ids: string[]) => Promise<void> } = {}): Promise<{ invoice: Invoice; order: Order }> {
   const sale = await ledger.byTxid(txid);
   if (!sale || !['paid', 'buying'].includes(sale.status)) throw new ShopError('purchase_not_reserved', 'Relay sale must be reserved before invoice creation', 409);
   if (sale.usd > limits.maxUsdPerSale || await ledger.today() > limits.maxUsdPerDay) throw new ShopError('over_daily_limit', 'Relay limit exceeded', 409);
-  if (process.env.OBORO_BITREFILL_LIVE_BUY !== '1') throw new ShopError('setup_required', 'Setup required: OBORO_BITREFILL_LIVE_BUY', 503);
+  // The concrete BitrefillClient enforces the live-buy switch at createInvoice.
   if (!client.hasKey()) throw new ShopError('setup_required', 'Setup required: BITREFILL_API_KEY', 503);
+  if (sale.kind === 'recharge' && !sale.invoice_id && !options.phoneNumber) throw new ShopError('phone_lost', 'Recharge phone number is no longer available', 410);
   if (!sale.invoice_id) {
     const product = await client.getProduct(sale.product_id, true);
     const pkg = product.packages.find(p => p.value === sale.value);
@@ -198,7 +200,7 @@ export async function fulfilRelay(client: BitrefillClient, ledger: { byTxid(txid
     if (await client.floatUsd() < sale.usd) throw new ShopError('float_empty', 'Relay float is insufficient', 409);
   }
   const value = /^\d+(?:\.\d+)?$/.test(sale.value) ? Number(sale.value) : sale.value;
-  const invoice = sale.invoice_id ? await client.getInvoice(sale.invoice_id) : await client.createInvoice({ products: [{ product_id: sale.product_id, ...pkgRef(sale.product_id, value), quantity: 1 }], payment_method: 'balance', auto_pay: true }, INVOICE_PERMIT);
+  const invoice = sale.invoice_id ? await client.getInvoice(sale.invoice_id) : await client.createInvoice({ products: [{ product_id: sale.product_id, ...pkgRef(sale.product_id, value), quantity: 1, ...(sale.kind === 'recharge' ? { phone_number: options.phoneNumber } : {}) }], payment_method: 'balance', auto_pay: true }, INVOICE_PERMIT);
   if (!sale.invoice_id) client.invalidateFloat();
   await options.onInvoice?.(invoice);
   const deadline = Date.now() + (options.timeoutMs ?? 300_000);
