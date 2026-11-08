@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { GiftCard } from './GiftCard';
 import { Shell } from './shell';
-import { ago, inr, kindOf, shortTx, explorerTx, stamp, usd, useRelay, zecOf, type RelayProduct, type RelayState } from './relay';
+import { ago, inr, kindOf, plan, priceLabel, shortTx, explorerTx, stamp, usd, useRelay, zecOf, type RelayProduct, type RelayState } from './relay';
 
 const NEVER_SAW = ['IP address', 'Nym address', 'payer address', 'account', 'email'];
 const KNOWS = ['product', 'price', 'txid', 'time'];
@@ -14,7 +14,12 @@ export function Home({ section }: { section?: 'developers' }) {
   const first = pickFirst(state.products);
   return (
     <Shell active={section ?? 'home'} status={status} state={state}>
-      <main>
+      <main className="has-moon">
+        <div className="moonbg" aria-hidden="true">
+          <video autoPlay muted loop playsInline preload="auto" poster="/art/moon-poster.jpg">
+            <source src="/art/moon.mp4" type="video/mp4" />
+          </video>
+        </div>
         <section className="r-hero wrap">
           <span className="r-eyebrow">
             <span className="tag">Live</span>
@@ -26,8 +31,8 @@ export function Home({ section }: { section?: 'developers' }) {
             <span className="moon">buy from.</span>
           </h1>
           <p className="r-lede">
-            Any agent gets a live quote, pays the <b>full price in shielded ZEC</b> with one x402 call over the Nym mixnet, and
-            gets a real gift-card code back, <b>sealed so only that agent can open it</b>, or tops up a phone. We learn what sold. Never who bought it.
+            Real gift cards and phone recharges, paid in <b>shielded ZEC</b> with one x402 call over the Nym mixnet. The code comes back{' '}
+            <b>sealed to the buying agent</b>. We learn what sold, never who bought it.
           </p>
           <div className="r-ctas">
             <a className="r-btn primary" href="#/store">
@@ -64,6 +69,7 @@ export function Home({ section }: { section?: 'developers' }) {
           </div>
           <div className="steps">
             <div className="step">
+              <img className="step-art" src="/art/quote.jpg" alt="" loading="lazy" />
               <span className="n mono">1</span>
               <h3>Quote</h3>
               <p>Bitrefill’s live price, converted at the live ZEC/USD rate. No markup, valid for ten minutes.</p>
@@ -73,6 +79,7 @@ export function Home({ section }: { section?: 'developers' }) {
               </div>
             </div>
             <div className="step">
+              <img className="step-art" src="/art/pay.jpg" alt="" loading="lazy" />
               <span className="n mono">2</span>
               <h3>Pay</h3>
               <p>One standard x402 payment in shielded Zcash. The relay checks it with a viewing key, then buys the card from its own balance.</p>
@@ -82,6 +89,7 @@ export function Home({ section }: { section?: 'developers' }) {
               </div>
             </div>
             <div className="step">
+              <img className="step-art" src="/art/open.jpg" alt="" loading="lazy" />
               <span className="n mono">3</span>
               <h3>Open</h3>
               <p>The code comes back sealed to a key made for this one purchase. If the order fails, the ZEC is refunded to a shielded address.</p>
@@ -90,6 +98,23 @@ export function Home({ section }: { section?: 'developers' }) {
                 {'\n'}<span className="c">// MCP: saved to a file, kept out of the model</span>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="r-sec wrap" aria-labelledby="rc">
+          <div className="rc-band">
+            <div className="rc-copy">
+              <span className="r-label">Mobile recharge</span>
+              <h2 id="rc">Top up a phone. <span className="dim">No code, no account.</span></h2>
+              <p>Pick a Jio plan, give the number, pay in shielded ZEC. Bitrefill recharges the number directly and the operator confirms by SMS. The relay keeps only the last two digits.</p>
+              <div className="rc-plans">
+                {rechargePlans(state).map((k) => (
+                  <span key={k.value} className="rc-chip"><b>{k.inr}</b><span>{k.label}</span></span>
+                ))}
+              </div>
+              <a className="r-btn ghost" href="#/store/recharge">Recharge a number <span className="arrow">→</span></a>
+            </div>
+            <img className="rc-art" src="/art/phone.jpg" alt="" loading="lazy" />
           </div>
         </section>
 
@@ -160,6 +185,12 @@ export function Home({ section }: { section?: 'developers' }) {
       </main>
     </Shell>
   );
+}
+
+function rechargePlans(state: RelayState) {
+  const p = state.products.find((x) => kindOf(x) === 'recharge');
+  if (!p) return [];
+  return p.packages.slice(0, 4).map((k) => ({ value: k.value, inr: priceLabel(k, p.currency), label: `${plan(k.value).data}${plan(k.value).days ? ` · ${plan(k.value).days} days` : ''}` }));
 }
 
 function pickFirst(products: RelayProduct[]) {
